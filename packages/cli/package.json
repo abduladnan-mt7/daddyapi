@@ -1,0 +1,21 @@
+{
+  "name": "@daddyapi/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The daddyapi command line: init, dev, run, validate, build.",
+  "license": "MIT",
+  "bin": {
+    "daddyapi": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@daddyapi/core": "workspace:*",
+    "@daddyapi/spec": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "yaml": "^2.5.0"
+  }
+}

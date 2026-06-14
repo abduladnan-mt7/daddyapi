@@ -1,0 +1,36 @@
+name: quotes
+baseUrl: https://quotes.toscrape.com
+description: >-
+  Quotes from quotes.toscrape.com — a public sandbox built specifically for
+  scraping practice. Safe and welcome to crawl.
+
+resources:
+  - name: quotes
+    description: Quotes with their author and tags, across the first few pages.
+    fetch:
+      path: /
+      pagination:
+        type: link
+        selector: li.next a
+        maxPages: 3
+    list:
+      selector: .quote
+      fields:
+        text: span.text
+        author: small.author
+        tags:
+          selector: .tags a.tag
+          many: true
+
+  - name: tags
+    description: Popular tags from the sidebar.
+    fetch:
+      path: /
+    list:
+      selector: span.tag-item
+      fields:
+        tag: a
+        url:
+          selector: a
+          attr: href
+          transform: url

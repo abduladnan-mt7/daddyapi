@@ -1,0 +1,35 @@
+name: books
+baseUrl: https://books.toscrape.com
+description: >-
+  Catalogue from books.toscrape.com — a public sandbox built specifically for
+  scraping practice. Safe and welcome to crawl.
+
+resources:
+  - name: books
+    description: Books with title, price, availability, and cover image.
+    fetch:
+      path: /
+      pagination:
+        type: link
+        selector: li.next a
+        maxPages: 2
+    list:
+      selector: article.product_pod
+      fields:
+        title:
+          selector: h3 a
+          attr: title
+        url:
+          selector: h3 a
+          attr: href
+          transform: url
+        price:
+          selector: .price_color
+          transform: [float]
+        available:
+          selector: .availability
+          transform: trim
+        image:
+          selector: img
+          attr: src
+          transform: url
