@@ -63,6 +63,9 @@ daddyapi validate quotes.yaml
 daddyapi build quotes.yaml --out openapi.json
 ```
 
+Add `--cache [dir]` to `run`/`dev` to persist fetched pages to disk (default
+`.daddyapi-cache`), so repeated runs don't re-hit the site.
+
 See ready-made specs in [`examples/`](./examples).
 
 ## The SiteSpec
