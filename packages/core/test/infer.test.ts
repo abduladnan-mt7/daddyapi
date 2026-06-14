@@ -21,6 +21,13 @@ describe('inferFromHtml', () => {
     expect(resource.fetch.pagination?.selector).toBe('a[rel="next"]');
   });
 
+  it('prefers the content-rich grid over a larger nav list', () => {
+    const $ = load(fixture('books-with-nav.html'));
+    const spec = inferFromHtml($, 'https://books.example.com/');
+    // The nav <ul> has 10 items vs the grid's 3 — richness must still win.
+    expect(spec.resources[0]!.list!.selector).toContain('product_pod');
+  });
+
   it('produces a valid spec even with no repeating structure', () => {
     const $ = load('<html><head><title>Hi</title></head><body><h1>Hello</h1></body></html>');
     const spec = inferFromHtml($, 'https://example.com/');

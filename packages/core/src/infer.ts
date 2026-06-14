@@ -66,21 +66,65 @@ interface Repeat {
   count: number;
 }
 
+interface ScoredRepeat extends Repeat {
+  score: number;
+}
+
+/**
+ * Find the most likely "list of things" on the page. We don't just pick the
+ * biggest group of repeating siblings — a site's nav menu is usually the biggest
+ * list but the least interesting. Instead we score each candidate by how
+ * content-rich its items are (headings, images, prices, structure, text) and
+ * only mildly reward item count, so the real content grid beats the nav.
+ */
 function findRepeatingSelector($: CheerioAPI): Repeat | null {
-  let best: Repeat | null = null;
+  // Held in an object so the assignment inside the .each closure survives
+  // TypeScript's control-flow narrowing once the loop returns.
+  const acc: { best: ScoredRepeat | null } = { best: null };
   $('body *').each((_i: number, el: any) => {
     const children = $(el).children().toArray();
-    if (children.length < 3) return;
-    const groups = new Map<string, number>();
+    if (children.length < 3 || children.length > 600) return;
+
+    const groups = new Map<string, any[]>();
     for (const child of children) {
       const sig = signature(child);
-      if (sig) groups.set(sig, (groups.get(sig) ?? 0) + 1);
+      if (!sig) continue;
+      const bucket = groups.get(sig);
+      if (bucket) bucket.push(child);
+      else groups.set(sig, [child]);
     }
-    for (const [selector, count] of groups) {
-      if (count >= 3 && (best === null || count > best.count)) best = { selector, count };
+
+    for (const [selector, elements] of groups) {
+      if (elements.length < 3) continue;
+      const score = scoreGroup($, elements);
+      if (acc.best === null || score > acc.best.score) {
+        acc.best = { selector, count: elements.length, score };
+      }
     }
   });
-  return best;
+  const best = acc.best;
+  return best ? { selector: best.selector, count: best.count } : null;
+}
+
+/** Average per-item richness, mildly scaled by how many items there are. */
+function scoreGroup($: CheerioAPI, elements: any[]): number {
+  const sample = elements.slice(0, 5);
+  let total = 0;
+  for (const el of sample) total += rowRichness($, el);
+  const avgRichness = total / sample.length;
+  return avgRichness * (1 + Math.log2(elements.length));
+}
+
+/** Heuristic "how much real content is in this row" signal. */
+function rowRichness($: CheerioAPI, el: any): number {
+  const $el = $(el);
+  const textLength = Math.min($el.text().replace(/\s+/g, ' ').trim().length, 200);
+  const headingBonus = $el.find('h1,h2,h3,h4,h5,h6').length > 0 ? 50 : 0;
+  const imageBonus = $el.find('img').length > 0 ? 30 : 0;
+  const priceBonus = $el.find('[class*="price"]').length > 0 ? 40 : 0;
+  const structureBonus = $el.find('*').length * 3;
+  const linkBonus = $el.find('a').length > 0 ? 10 : 0;
+  return textLength + headingBonus + imageBonus + priceBonus + structureBonus + linkBonus;
 }
 
 function signature(el: any): string | null {
