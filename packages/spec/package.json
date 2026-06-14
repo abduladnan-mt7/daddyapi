@@ -1,0 +1,26 @@
+{
+  "name": "@daddyapi/spec",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The daddyapi SiteSpec schema, loader, and validator — the language-neutral contract.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0",
+    "zod": "^3.23.0"
+  }
+}

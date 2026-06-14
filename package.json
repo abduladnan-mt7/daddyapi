@@ -1,0 +1,26 @@
+{
+  "name": "daddyapi-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Point daddyapi at a bot-friendly website and get a documented API.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec rimraf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "packageManager": "pnpm@9.15.9"
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@daddyapi/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "daddyapi runtime: polite fetching, extraction, the data SDK, the HTTP server, and the crawler/infer engine.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@daddyapi/spec": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "cheerio": "^1.0.0",
+    "hono": "^4.6.0"
+  }
+}
