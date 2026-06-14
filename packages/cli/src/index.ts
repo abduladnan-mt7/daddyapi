@@ -3,11 +3,14 @@ import { dirname, resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import {
   buildOpenApi,
+  createFetcher,
   createServer,
+  FileCache,
   getResource,
   type Hooks,
   inferSpec,
   loadHooks,
+  type PoliteFetcher,
   runResource,
 } from '@daddyapi/core';
 import { loadSiteSpec, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
@@ -46,6 +49,15 @@ async function resolveHooks(spec: SiteSpec, specPath: string): Promise<Hooks | u
   return loadHooks(hookPath);
 }
 
+// Build a fetcher with a persistent disk cache when --cache is passed, so
+// repeated runs don't re-hit the site. Defaults the cache dir to .daddyapi-cache.
+function buildFetcher(spec: SiteSpec, flags: Flags): PoliteFetcher | undefined {
+  const cache = flags.cache;
+  if (!cache) return undefined;
+  const dir = typeof cache === 'string' ? cache : '.daddyapi-cache';
+  return createFetcher(spec.politeness, { cache: new FileCache(dir) });
+}
+
 function parseParams(raw: string | undefined): Record<string, string> {
   const params: Record<string, string> = {};
   if (!raw) return params;
@@ -70,6 +82,7 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
     params: parseParams(str(flags.params)),
     maxPages: pagesFlag ? Number(pagesFlag) : undefined,
     hooks,
+    fetcher: buildFetcher(spec, flags),
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.warnings.length > 0) {
@@ -85,7 +98,7 @@ async function cmdDev(positionals: string[], flags: Flags): Promise<void> {
   const hooks = await resolveHooks(spec, specPath);
   const portFlag = str(flags.port);
   const port = portFlag ? Number(portFlag) : 8787;
-  const app = createServer(spec, { hooks });
+  const app = createServer(spec, { hooks, fetcher: buildFetcher(spec, flags) });
   serve({ fetch: app.fetch, port });
   process.stdout.write(`\n  daddyapi serving "${spec.name}"\n`);
   process.stdout.write(`  API      http://localhost:${port}/\n`);
@@ -155,9 +168,13 @@ function printHelp(): void {
 
 Usage:
   daddyapi init <url> [--out spec.yaml]      Crawl a site and write a draft SiteSpec
-  daddyapi dev <spec> [--port 8787]          Serve the spec as a live API with Swagger docs
-  daddyapi run <spec> <resource> [--pages N] [--params k=v,...]
+  daddyapi dev <spec> [--port 8787] [--cache [dir]]
+                                             Serve the spec as a live API with Swagger docs
+  daddyapi run <spec> <resource> [--pages N] [--params k=v,...] [--cache [dir]]
                                              Fetch one resource and print JSON
+
+  --cache [dir]  Persist fetched pages to disk (default dir: .daddyapi-cache),
+                 so repeated runs don't re-hit the site.
   daddyapi validate <spec>                   Check a spec against the schema
   daddyapi build <spec> [--out openapi.json] Emit the OpenAPI document
   daddyapi help                              Show this help
