@@ -1,7 +1,16 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { serve } from '@hono/node-server';
-import { buildOpenApi, createServer, getResource, inferSpec, runResource } from '@daddyapi/core';
-import { loadSiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
+import {
+  buildOpenApi,
+  createServer,
+  getResource,
+  type Hooks,
+  inferSpec,
+  loadHooks,
+  runResource,
+} from '@daddyapi/core';
+import { loadSiteSpec, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
 import { stringify as toYaml } from 'yaml';
 
 type Flags = Record<string, string | boolean>;
@@ -31,6 +40,12 @@ function str(value: string | boolean | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+async function resolveHooks(spec: SiteSpec, specPath: string): Promise<Hooks | undefined> {
+  if (!spec.hooks) return undefined;
+  const hookPath = resolve(dirname(specPath), spec.hooks);
+  return loadHooks(hookPath);
+}
+
 function parseParams(raw: string | undefined): Record<string, string> {
   const params: Record<string, string> = {};
   if (!raw) return params;
@@ -49,10 +64,12 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
   }
   const spec = loadSiteSpec(specPath);
   const resource = getResource(spec, resourceName);
+  const hooks = await resolveHooks(spec, specPath);
   const pagesFlag = str(flags.pages);
   const result = await runResource(spec, resource, {
     params: parseParams(str(flags.params)),
     maxPages: pagesFlag ? Number(pagesFlag) : undefined,
+    hooks,
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.warnings.length > 0) {
@@ -61,13 +78,14 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
   }
 }
 
-function cmdDev(positionals: string[], flags: Flags): void {
+async function cmdDev(positionals: string[], flags: Flags): Promise<void> {
   const [specPath] = positionals;
   if (!specPath) throw new Error('Usage: daddyapi dev <spec> [--port N]');
   const spec = loadSiteSpec(specPath);
+  const hooks = await resolveHooks(spec, specPath);
   const portFlag = str(flags.port);
   const port = portFlag ? Number(portFlag) : 8787;
-  const app = createServer(spec);
+  const app = createServer(spec, { hooks });
   serve({ fetch: app.fetch, port });
   process.stdout.write(`\n  daddyapi serving "${spec.name}"\n`);
   process.stdout.write(`  API      http://localhost:${port}/\n`);

@@ -1,0 +1,32 @@
+name: books-rated
+baseUrl: https://books.toscrape.com
+description: >-
+  Same catalogue as books.yaml, but with a numeric star rating computed by a
+  code escape-hatch (hooks) and the results sorted cheapest-first.
+
+# Path to the hooks module, relative to this file (the code escape-hatch).
+hooks: ./hooks/books.mjs
+
+resources:
+  - name: books
+    description: Books with title, price, and a numeric (1-5) star rating.
+    postProcess: sortByPrice
+    fetch:
+      path: /
+      pagination:
+        type: link
+        selector: li.next a
+        maxPages: 1
+    list:
+      selector: article.product_pod
+      fields:
+        title:
+          selector: h3 a
+          attr: title
+        price:
+          selector: .price_color
+          transform: [float]
+        rating:
+          selector: .star-rating
+          attr: class
+          transform: rating # custom transform from hooks/books.mjs

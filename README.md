@@ -110,6 +110,42 @@ A resource defines either a **`list`** (a repeating-row selector + per-row
 fields) or an **`item`** (page-level fields). Missing required fields don't fail
 the request — you get partial `data` plus a `warnings[]` array.
 
+## Code escape-hatch (hooks)
+
+The declarative spec covers most sites. For the hard 20% — values that need real
+code — a spec can point at a **hooks** module and use its functions as custom
+`transform`s (per field) or `postProcess`ors (per resource):
+
+```yaml
+# books-rated.yaml
+hooks: ./hooks/books.mjs        # path relative to the spec file
+resources:
+  - name: books
+    postProcess: sortByPrice    # a function from the hooks module
+    fetch: { path: / }
+    list:
+      selector: article.product_pod
+      fields:
+        price:  { selector: .price_color, transform: [float] }
+        rating: { selector: .star-rating, attr: class, transform: rating } # custom
+```
+
+```js
+// hooks/books.mjs
+const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+export const transforms = {
+  rating: (value) => WORDS[String(value).replace(/star-rating/i, '').trim().toLowerCase()] ?? null,
+};
+export const postProcess = {
+  sortByPrice: (rows) => [...rows].sort((a, b) => a.price - b.price),
+};
+```
+
+See [`examples/books-rated.yaml`](./examples/books-rated.yaml) for the full,
+runnable version. Hooks are plain JS modules (`.mjs`/`.js`); since you reference
+them in your own spec, they run with your trust — only point `hooks` at code you
+control.
+
 ## Use it as a library
 
 ```ts
@@ -137,7 +173,7 @@ const app = createServer(spec);
 
 ## Roadmap
 
-- [ ] Per-resource **code escape-hatches** for the hard 20% of sites
+- [x] **Code escape-hatches** (hooks) for the hard 20% of sites
 - [ ] **Python runtime** reading the same SiteSpec files
 - [ ] JS-rendered pages (optional Playwright adapter)
 - [ ] Redis cache backend

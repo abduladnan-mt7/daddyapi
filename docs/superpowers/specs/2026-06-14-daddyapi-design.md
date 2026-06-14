@@ -70,9 +70,14 @@ One declarative document describes a site→API. Key parts:
   `item` (page-level fields). Fields are CSS selectors with optional `attr`,
   `html`, `many`, `transform`, `default`, `optional`.
 
-Field types drive both the OpenAPI schema and the response shape. The escape
-hatch for hard sites (a code file per resource) is reserved in the design and
-lands in a later round.
+Field types drive both the OpenAPI schema and the response shape.
+
+**Code escape-hatch (implemented):** a spec may set `hooks: <module path>` and
+reference its functions as custom field `transform`s or a resource `postProcess`.
+The runtime resolves non-built-in transform names from `hooks.transforms`, and
+applies `hooks.postProcess[name]` to a resource's data after extraction. The CLI
+loads the module relative to the spec file; the library accepts a `hooks` object
+directly. See `examples/books-rated.yaml`.
 
 ## Data flows
 
@@ -99,13 +104,14 @@ lands in a later round.
 
 ## Scope
 
-**v1 (this round):** TypeScript runtime · HTML extraction (cheerio) ·
+**v1 (shipped):** TypeScript runtime · HTML extraction (cheerio) ·
 `init/dev/run/validate/build` · memory + file cache · OpenAPI + Swagger ·
-example specs · responsible-use docs · CI.
+**code escape-hatches (hooks)** · content-ranked `init` · example specs ·
+responsible-use docs · CI.
 
-**Later (designed-for, not built):** code escape-hatches · Python runtime ·
-JS-rendered pages (Playwright adapter) · Redis cache · community spec registry ·
-API keys/rate-limits on served APIs · deploy templates.
+**Later (designed-for, not built):** Python runtime · JS-rendered pages
+(Playwright adapter) · Redis cache · community spec registry · API keys/
+rate-limits on served APIs · deploy templates.
 
 ## Non-goals
 

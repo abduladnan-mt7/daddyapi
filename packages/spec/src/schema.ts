@@ -37,8 +37,12 @@ export const fieldSpecSchema = z.union([
       html: z.boolean().optional(),
       /** Collect every match into an array (e.g. a list of tags). */
       many: z.boolean().optional(),
-      /** One transform or an ordered list of transforms. */
-      transform: z.union([transformSchema, z.array(transformSchema)]).optional(),
+      /**
+       * One transform or an ordered list. Built-in names are listed in
+       * `transformSchema`; any other name is resolved from the spec's `hooks`
+       * module (the code escape-hatch) at runtime.
+       */
+      transform: z.union([z.string(), z.array(z.string())]).optional(),
       /** Value to use when nothing matches. */
       default: z.unknown().optional(),
       /** When true, a missing value yields null instead of a warning. */
@@ -104,6 +108,8 @@ export const resourceSchema = z
     fetch: fetchSpecSchema,
     list: listSpecSchema.optional(),
     item: itemSpecSchema.optional(),
+    /** Name of a function in the spec's `hooks` module to post-process this resource's data. */
+    postProcess: z.string().optional(),
   })
   .strict()
   .refine((r) => r.list !== undefined || r.item !== undefined, {
@@ -135,6 +141,8 @@ export const siteSpecSchema = z
     name: z.string(),
     baseUrl: z.string().url(),
     description: z.string().optional(),
+    /** Path (relative to the spec file) to a JS module of code escape-hatch hooks. */
+    hooks: z.string().optional(),
     politeness: politenessSchema,
     resources: z.array(resourceSchema).min(1),
   })
