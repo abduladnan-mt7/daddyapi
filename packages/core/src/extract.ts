@@ -1,5 +1,6 @@
-import type { FieldSpec, Fields, Transform } from '@daddyapi/spec';
+import type { FieldSpec, Fields } from '@daddyapi/spec';
 import type { Cheerio, CheerioAPI } from 'cheerio';
+import type { Hooks } from './hooks';
 
 export interface ExtractWarning {
   field: string;
@@ -10,6 +11,8 @@ export interface ExtractContext {
   /** The page's final URL, used to resolve relative links for the "url" transform. */
   baseUrl: string;
   warnings: ExtractWarning[];
+  /** Optional code escape-hatch providing custom transforms. */
+  hooks?: Hooks;
 }
 
 type ObjectFieldSpec = Exclude<FieldSpec, string>;
@@ -49,7 +52,7 @@ function extractField(
   if (spec.many) {
     const values: unknown[] = [];
     nodes.each((_i: number, el: any) => {
-      values.push(readValue($(el), spec, context));
+      values.push(readValue($(el), spec, name, context));
     });
     return values;
   }
@@ -65,10 +68,15 @@ function extractField(
     return null;
   }
 
-  return readValue(nodes.first(), spec, context);
+  return readValue(nodes.first(), spec, name, context);
 }
 
-function readValue(node: Cheerio<any>, spec: ObjectFieldSpec, context: ExtractContext): unknown {
+function readValue(
+  node: Cheerio<any>,
+  spec: ObjectFieldSpec,
+  fieldName: string,
+  context: ExtractContext,
+): unknown {
   let raw: string;
   if (spec.attr) raw = node.attr(spec.attr) ?? '';
   else if (spec.html) raw = node.html() ?? '';
@@ -81,7 +89,7 @@ function readValue(node: Cheerio<any>, spec: ObjectFieldSpec, context: ExtractCo
       ? spec.transform
       : [spec.transform]
     : [];
-  for (const transform of transforms) value = applyTransform(value, transform, context.baseUrl);
+  for (const transform of transforms) value = applyTransform(value, transform, fieldName, context);
   return value;
 }
 
@@ -92,9 +100,14 @@ function firstNumber(s: string): string {
   return match ? match[0] : '';
 }
 
-function applyTransform(value: unknown, transform: Transform, baseUrl: string): unknown {
+function applyTransform(
+  value: unknown,
+  name: string,
+  fieldName: string,
+  context: ExtractContext,
+): unknown {
   const str = value == null ? '' : String(value);
-  switch (transform) {
+  switch (name) {
     case 'trim':
       return str.trim();
     case 'lower':
@@ -114,11 +127,19 @@ function applyTransform(value: unknown, transform: Transform, baseUrl: string): 
       return /^(true|yes|1|on)$/i.test(str.trim());
     case 'url':
       try {
-        return new URL(str, baseUrl).href;
+        return new URL(str, context.baseUrl).href;
       } catch {
         return str;
       }
-    default:
+    default: {
+      // Not a built-in — try the spec's code escape-hatch.
+      const custom = context.hooks?.transforms?.[name];
+      if (custom) return custom(value, { baseUrl: context.baseUrl });
+      context.warnings.push({
+        field: fieldName,
+        message: `unknown transform "${name}" (not built-in and not found in hooks)`,
+      });
       return value;
+    }
   }
 }

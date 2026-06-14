@@ -2,11 +2,14 @@ import type { Resource, SiteSpec } from '@daddyapi/spec';
 import { type CheerioAPI, load } from 'cheerio';
 import { type ExtractWarning, extractFields } from './extract';
 import { createFetcher, type PoliteFetcher } from './fetch';
+import type { Hooks } from './hooks';
 
 export interface RunOptions {
   params?: Record<string, string | number>;
   maxPages?: number;
   fetcher?: PoliteFetcher;
+  /** Code escape-hatch: custom transforms and post-processors. */
+  hooks?: Hooks;
 }
 
 export interface RunResult {
@@ -31,7 +34,7 @@ function fillTemplate(path: string, params: Record<string, string | number>): st
   });
 }
 
-/** Fetch, extract, and normalize a single resource. */
+/** Fetch, extract, normalize, and post-process a single resource. */
 export async function runResource(
   spec: SiteSpec,
   resource: Resource,
@@ -42,48 +45,64 @@ export async function runResource(
   const startUrl = new URL(fillTemplate(resource.fetch.path, params), spec.baseUrl).href;
   const warnings: ExtractWarning[] = [];
 
+  let data: unknown;
+  let pages = 0;
+  let fromCache = false;
+
   if (resource.list) {
     const list = resource.list;
     const maxPages = options.maxPages ?? resource.fetch.pagination?.maxPages ?? 1;
     const rows: unknown[] = [];
     let url: string | null = startUrl;
-    let pages = 0;
-    let anyFromCache = false;
 
     while (url !== null && pages < maxPages) {
-      const { html, finalUrl, fromCache } = await fetcher.getHtml(url);
-      anyFromCache = anyFromCache || fromCache;
-      const $ = load(html);
+      const fetched = await fetcher.getHtml(url);
+      fromCache = fromCache || fetched.fromCache;
+      const $ = load(fetched.html);
       $(list.selector).each((_i: number, el: any) => {
-        rows.push(extractFields($, $(el), list.fields, { baseUrl: finalUrl, warnings }));
+        rows.push(
+          extractFields($, $(el), list.fields, {
+            baseUrl: fetched.finalUrl,
+            warnings,
+            hooks: options.hooks,
+          }),
+        );
       });
       pages++;
-      url = pages < maxPages ? nextPageUrl($, finalUrl, resource) : null;
+      url = pages < maxPages ? nextPageUrl($, fetched.finalUrl, resource) : null;
     }
-
-    return {
-      data: rows,
+    data = rows;
+  } else {
+    const fetched = await fetcher.getHtml(startUrl);
+    fromCache = fetched.fromCache;
+    pages = 1;
+    const $ = load(fetched.html);
+    data = extractFields($, null, resource.item!.fields, {
+      baseUrl: fetched.finalUrl,
       warnings,
-      meta: {
-        resource: resource.name,
-        source: startUrl,
-        pages,
-        fromCache: anyFromCache,
-        fetchedAt: new Date().toISOString(),
-      },
-    };
+      hooks: options.hooks,
+    });
   }
 
-  const { html, finalUrl, fromCache } = await fetcher.getHtml(startUrl);
-  const $ = load(html);
-  const data = extractFields($, null, resource.item!.fields, { baseUrl: finalUrl, warnings });
+  if (resource.postProcess) {
+    const fn = options.hooks?.postProcess?.[resource.postProcess];
+    if (fn) {
+      data = await fn(data, { baseUrl: startUrl, spec, resource });
+    } else {
+      warnings.push({
+        field: '(postProcess)',
+        message: `no hook named "${resource.postProcess}" found`,
+      });
+    }
+  }
+
   return {
     data,
     warnings,
     meta: {
       resource: resource.name,
       source: startUrl,
-      pages: 1,
+      pages,
       fromCache,
       fetchedAt: new Date().toISOString(),
     },
@@ -129,13 +148,18 @@ export function getResource(spec: SiteSpec, name: string): Resource {
 
 export type Client = Record<string, (options?: RunOptions) => Promise<RunResult>>;
 
-/** Build a typed-ish data SDK: one method per resource, sharing a fetcher. */
-export function createClient(spec: SiteSpec, base: { fetcher?: PoliteFetcher } = {}): Client {
+export interface ClientOptions {
+  fetcher?: PoliteFetcher;
+  hooks?: Hooks;
+}
+
+/** Build a data SDK: one method per resource, sharing a fetcher and hooks. */
+export function createClient(spec: SiteSpec, base: ClientOptions = {}): Client {
   const fetcher = base.fetcher ?? createFetcher(spec.politeness);
   const client: Client = {};
   for (const resource of spec.resources) {
     client[resource.name] = (options: RunOptions = {}) =>
-      runResource(spec, resource, { fetcher, ...options });
+      runResource(spec, resource, { fetcher, hooks: base.hooks, ...options });
   }
   return client;
 }

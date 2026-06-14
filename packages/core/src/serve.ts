@@ -1,11 +1,14 @@
 import type { SiteSpec } from '@daddyapi/spec';
 import { Hono } from 'hono';
 import { createFetcher, FetchError, type PoliteFetcher } from './fetch';
+import type { Hooks } from './hooks';
 import { buildOpenApi } from './openapi';
 import { runResource } from './runtime';
 
 export interface ServeOptions {
   fetcher?: PoliteFetcher;
+  /** Code escape-hatch: custom transforms and post-processors. */
+  hooks?: Hooks;
 }
 
 /** Turn a SiteSpec into a Hono app: one route per resource, plus OpenAPI + docs. */
@@ -36,7 +39,12 @@ export function createServer(spec: SiteSpec, options: ServeOptions = {}): Hono {
         const params: Record<string, string> = { ...c.req.query() };
         const pagesRaw = c.req.query('pages');
         const maxPages = pagesRaw ? Math.max(1, Number(pagesRaw) || 1) : undefined;
-        const result = await runResource(spec, resource, { fetcher, params, maxPages });
+        const result = await runResource(spec, resource, {
+          fetcher,
+          params,
+          maxPages,
+          hooks: options.hooks,
+        });
         return c.json(result);
       } catch (err) {
         const robotsBlocked = err instanceof FetchError && err.code === 'robots-disallowed';
