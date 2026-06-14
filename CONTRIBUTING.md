@@ -49,3 +49,19 @@ node packages/cli/dist/index.js run examples/quotes.yaml quotes --pages 1
 - Keep changes focused; add or update tests for behavior changes.
 - Make sure `pnpm build && pnpm typecheck && pnpm test` all pass.
 - Be kind and constructive in review. 🙏
+
+## Releasing (maintainers)
+
+Publishing to npm is automated by `.github/workflows/release.yml`:
+
+1. One-time: add an `NPM_TOKEN` repository secret (an npm automation token with
+   publish rights to the `@daddyapi` scope).
+2. Bump the version in each `packages/*/package.json` (keep them in sync).
+3. Commit, then tag and push:
+   ```bash
+   git tag v0.1.0 && git push origin v0.1.0
+   ```
+4. The workflow builds, tests, and runs `pnpm -r publish` with npm provenance.
+
+To publish locally instead: `npm login`, then `pnpm -r publish --access public`.
+

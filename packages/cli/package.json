@@ -4,6 +4,19 @@
   "type": "module",
   "description": "The daddyapi command line: init, dev, run, validate, build.",
   "license": "MIT",
+  "author": "Abdul Adnan",
+  "homepage": "https://github.com/abduladnan-mt7/daddyapi#readme",
+  "bugs": "https://github.com/abduladnan-mt7/daddyapi/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abduladnan-mt7/daddyapi.git",
+    "directory": "packages/cli"
+  },
+  "keywords": ["daddyapi", "scraping", "api", "cli", "openapi", "scraper"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "bin": {
     "daddyapi": "./dist/index.js"
   },

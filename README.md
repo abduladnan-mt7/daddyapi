@@ -43,8 +43,10 @@ pnpm build
 node packages/cli/dist/index.js help
 ```
 
-(Published npm packages — `@daddyapi/cli`, `@daddyapi/core`, `@daddyapi/spec` —
-are on the roadmap.)
+The packages (`@daddyapi/cli`, `@daddyapi/core`, `@daddyapi/spec`) are
+publish-ready; once released you'll be able to `npm i -g @daddyapi/cli`. The
+release pipeline is wired up in `.github/workflows/release.yml` — publishing just
+needs an `NPM_TOKEN` secret and a `vX.Y.Z` tag (see CONTRIBUTING).
 
 ## Quick start
 
