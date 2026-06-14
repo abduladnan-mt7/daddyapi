@@ -4,6 +4,19 @@
   "type": "module",
   "description": "The daddyapi SiteSpec schema, loader, and validator — the language-neutral contract.",
   "license": "MIT",
+  "author": "Abdul Adnan",
+  "homepage": "https://github.com/abduladnan-mt7/daddyapi#readme",
+  "bugs": "https://github.com/abduladnan-mt7/daddyapi/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abduladnan-mt7/daddyapi.git",
+    "directory": "packages/spec"
+  },
+  "keywords": ["daddyapi", "scraping", "api", "sitespec", "schema", "zod"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

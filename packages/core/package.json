@@ -4,6 +4,19 @@
   "type": "module",
   "description": "daddyapi runtime: polite fetching, extraction, the data SDK, the HTTP server, and the crawler/infer engine.",
   "license": "MIT",
+  "author": "Abdul Adnan",
+  "homepage": "https://github.com/abduladnan-mt7/daddyapi#readme",
+  "bugs": "https://github.com/abduladnan-mt7/daddyapi/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abduladnan-mt7/daddyapi.git",
+    "directory": "packages/core"
+  },
+  "keywords": ["daddyapi", "scraping", "api", "openapi", "cheerio", "hono", "crawler"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
