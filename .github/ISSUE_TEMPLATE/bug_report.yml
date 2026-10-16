@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in daddyapi doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this! A spec and the exact command make bugs much faster to fix.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The command you ran and the SiteSpec (or the smallest part of it that shows the problem).
+      placeholder: |
+        daddyapi run examples/quotes.yaml quotes --pages 1
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: daddyapi version or commit
+      placeholder: main @ abc1234
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Node.js version and OS
+      placeholder: Node 22.11, Windows 11
+    validations:
+      required: true
+  - type: checkboxes
+    id: bot-friendly
+    attributes:
+      label: Bot-friendly site
+      options:
+        - label: The site involved permits crawling (its robots.txt and terms allow it), or the bug doesn't involve a live site.
+          required: true

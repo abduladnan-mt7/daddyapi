@@ -1,0 +1,26 @@
+name: New example spec
+description: Propose (or claim) a ready-made SiteSpec for a bot-friendly site. A great first contribution!
+labels: [example-spec, good first issue]
+body:
+  - type: input
+    id: site
+    attributes:
+      label: Site URL
+      placeholder: https://quotes.toscrape.com
+    validations:
+      required: true
+  - type: textarea
+    id: resources
+    attributes:
+      label: What would the spec expose?
+      description: The resources and fields you'd extract, e.g. `books` with title, price, rating.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you start
+      options:
+        - label: I checked the site's robots.txt and terms, and they permit crawling.
+          required: true
+        - label: I'd like to write this spec myself.

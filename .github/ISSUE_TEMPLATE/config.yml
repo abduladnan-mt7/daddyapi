@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/abduladnan-mt7/daddyapi/blob/main/CONTRIBUTING.md
+    about: Development setup, project layout and how to add an example spec.
