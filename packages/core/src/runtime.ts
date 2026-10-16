@@ -3,6 +3,7 @@ import { type CheerioAPI, load } from 'cheerio';
 import { type ExtractWarning, extractFields } from './extract';
 import { createFetcher, type PoliteFetcher } from './fetch';
 import type { Hooks } from './hooks';
+import { ParamError } from './params';
 
 export interface RunOptions {
   params?: Record<string, string | number>;
@@ -28,7 +29,7 @@ function fillTemplate(path: string, params: Record<string, string | number>): st
   return path.replace(/\{(\w+)\}/g, (_match, key: string) => {
     const value = params[key];
     if (value === undefined) {
-      throw new Error(`Missing required parameter "${key}" for path "${path}"`);
+      throw new ParamError(`Missing required parameter "${key}" for path "${path}"`, key);
     }
     return encodeURIComponent(String(value));
   });

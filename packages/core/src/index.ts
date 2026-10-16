@@ -3,6 +3,7 @@ export * from './cache';
 export * from './fetch';
 export * from './hooks';
 export * from './extract';
+export * from './params';
 export * from './runtime';
 export * from './openapi';
 export * from './serve';
