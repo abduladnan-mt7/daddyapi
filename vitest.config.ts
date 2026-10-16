@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       '@daddyapi/spec': fileURLToPath(new URL('./packages/spec/src/index.ts', import.meta.url)),
       '@daddyapi/core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
+      '@daddyapi/mcp': fileURLToPath(new URL('./packages/mcp/src/index.ts', import.meta.url)),
     },
   },
   test: {
