@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a new transform, CLI option, runtime feature or docs improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what you're trying to do and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? A SiteSpec snippet or CLI example helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This is not about defeating anti-bot measures, solving captchas, or scraping behind logins or paywalls.
+          required: true
+        - label: I'd like to work on this myself.

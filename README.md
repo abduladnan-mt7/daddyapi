@@ -1,5 +1,10 @@
 # daddyapi
 
+[![CI](https://github.com/abduladnan-mt7/daddyapi/actions/workflows/ci.yml/badge.svg)](https://github.com/abduladnan-mt7/daddyapi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Good first issues](https://img.shields.io/github/issues/abduladnan-mt7/daddyapi/good%20first%20issue?label=good%20first%20issues&color=7057ff)](https://github.com/abduladnan-mt7/daddyapi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
+
 **Point it at a bot-friendly website. Get a documented API.**
 
 daddyapi turns a website into a clean, cached, documented API — described by one
@@ -188,8 +193,17 @@ const app = createServer(spec);
 
 ## Contributing
 
-Contributions and new example specs are welcome — see
-[CONTRIBUTING.md](./CONTRIBUTING.md). The design doc lives in
+Contributions are welcome, and you don't need to know the whole codebase to help.
+
+- **New here?** Pick an issue labelled
+  [`good first issue`](https://github.com/abduladnan-mt7/daddyapi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+  Comment on it so nobody else starts the same work.
+- **Easiest first PR:** add an example spec for a bot-friendly site
+  ([how](./CONTRIBUTING.md#adding-an-example-spec)).
+- **Found a bug or have an idea?** [Open an issue](https://github.com/abduladnan-mt7/daddyapi/issues/new/choose).
+
+Setup, project layout and the PR checklist are in [CONTRIBUTING.md](./CONTRIBUTING.md).
+Please follow the [Code of Conduct](./CODE_OF_CONDUCT.md). The design doc lives in
 [`docs/superpowers/specs`](./docs/superpowers/specs).
 
 ## License
