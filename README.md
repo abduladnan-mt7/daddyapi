@@ -8,6 +8,8 @@
 
 **Point it at a bot-friendly website. Get a documented API.**
 
+![daddyapi turning quotes.toscrape.com into a live API with Swagger docs](./docs/assets/demo.gif)
+
 daddyapi turns a website into a clean, cached, documented API — described by one
 declarative **SiteSpec** file. From that single file you get **both** a callable
 data SDK **and** a live HTTP API with auto-generated OpenAPI/Swagger docs. Stop
