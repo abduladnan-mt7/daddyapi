@@ -20,10 +20,11 @@ let siteUrl: string;
 let dir: string;
 let specPath: string;
 const hits: string[] = [];
+let pages: Record<string, string> = {};
 
 beforeAll(async () => {
   if (!built) return;
-  const pages: Record<string, string> = {
+  pages = {
     '/': readFileSync(new URL('quotes.html', FIXTURES), 'utf8'),
     '/page/2/': readFileSync(new URL('quotes-page2.html', FIXTURES), 'utf8'),
     '/robots.txt': 'User-agent: *\nDisallow: /private/\n',
@@ -219,5 +220,76 @@ describe.skipIf(!built)('e2e: CLI commands', () => {
   it('build emits the OpenAPI document', async () => {
     const res = await run(['build', specPath]);
     expect((JSON.parse(res.stdout) as { openapi: string }).openapi).toBe('3.0.3');
+  });
+});
+
+describe.skipIf(!built)('e2e: check, types and formats', () => {
+  it('run --format csv writes CSV', async () => {
+    const res = await run(['run', specPath, 'quotes', '--pages', '1', '--format', 'csv']);
+    expect(res.code).toBe(0);
+    const lines = res.stdout.trim().split(/\r?\n/);
+    expect(lines[0]).toBe('text,author');
+    expect(lines).toHaveLength(4);
+  });
+
+  it('check passes, saves a baseline, then catches a site redesign', async () => {
+    const only = ['--only', 'quotes'];
+    const baseline = join(dir, 'quotes.baseline.json');
+
+    const first = await run(['check', specPath, ...only, '--update-baseline']);
+    expect(first.code).toBe(0);
+    expect(first.stdout).toContain('PASS   quotes');
+    expect(existsSync(baseline)).toBe(true);
+
+    const original = pages['/']!;
+    pages['/'] = original.replace(/class="author"/g, 'class="writer"');
+    try {
+      const second = await run(['check', specPath, ...only, '--json']);
+      expect(second.code).toBe(1);
+      const report = JSON.parse(second.stdout) as {
+        ok: boolean;
+        resources: Array<{ status: string; issues: Array<{ field?: string; code: string }> }>;
+      };
+      expect(report.ok).toBe(false);
+      expect(report.resources[0]!.status).toBe('fail');
+      expect(report.resources[0]!.issues.map((i) => `${i.field}:${i.code}`)).toEqual(
+        expect.arrayContaining(['author:missing-field', 'author:drift-fill-rate']),
+      );
+    } finally {
+      pages['/'] = original;
+    }
+  });
+
+  it('check exits 2 when the site cannot be reached', async () => {
+    const broken = join(dir, 'down.yaml');
+    writeFileSync(
+      broken,
+      `name: down
+baseUrl: http://127.0.0.1:9
+politeness: { maxRetries: 0, timeoutMs: 2000 }
+resources:
+  - name: r
+    fetch: { path: / }
+    list: { selector: .x, fields: { x: .x } }
+`,
+    );
+    const res = await run(['check', broken]);
+    expect(res.code).toBe(2);
+    expect(res.stdout).toContain('ERROR  r');
+  });
+
+  it('types writes a TypeScript client', async () => {
+    const out = join(dir, 'client.ts');
+    const res = await run(['types', specPath, '--out', out]);
+    expect(res.code).toBe(0);
+    const source = readFileSync(out, 'utf8');
+    expect(source).toContain('export interface QuotesRow');
+    expect(source).toContain('export class QuotesClient');
+  });
+
+  it('types --json-schema writes JSON Schema', async () => {
+    const res = await run(['types', specPath, '--json-schema']);
+    const schema = JSON.parse(res.stdout) as { $defs: Record<string, unknown> };
+    expect(Object.keys(schema.$defs)).toEqual(['Quotes', 'Secret']);
   });
 });

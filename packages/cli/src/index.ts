@@ -3,10 +3,17 @@ import { dirname, resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import {
+  type Baseline,
+  baselineFromReport,
   buildOpenApi,
+  checkSpec,
   createFetcher,
   createServer,
+  DATA_FORMATS,
   FileCache,
+  formatReport,
+  generateJsonSchema,
+  generateTypeScript,
   getResource,
   type Hooks,
   inferSpec,
@@ -14,7 +21,10 @@ import {
   normalizeUrl,
   type PoliteFetcher,
   type RateLimitOptions,
+  resourceInputs,
   runResource,
+  toCsv,
+  toNdjson,
 } from '@daddyapi/core';
 import { serveMcpStdio } from '@daddyapi/mcp';
 import { loadSiteSpec, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
@@ -131,14 +141,30 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
   const spec = loadSiteSpec(requireSpecFile(specPath, 'run'));
   const resource = getResource(spec, resourceName);
   const hooks = await resolveHooks(spec, specPath);
-  const pagesFlag = str(flags.pages);
+  const formatFlag = (str(flags.format) ?? 'json').toLowerCase();
+  if (!(DATA_FORMATS as readonly string[]).includes(formatFlag)) {
+    throw new Error(`--format must be one of ${DATA_FORMATS.join(', ')}`);
+  }
   const result = await runResource(spec, resource, {
     params: parseParams(str(flags.params)),
-    maxPages: pagesFlag ? Number(pagesFlag) : undefined,
+    maxPages: positiveIntFlag(flags, 'pages'),
     hooks,
     fetcher: buildFetcher(spec, flags),
   });
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  const columns = resourceInputs(resource).fieldNames;
+  const output =
+    formatFlag === 'csv'
+      ? toCsv(result.data, columns)
+      : formatFlag === 'ndjson'
+        ? toNdjson(result.data)
+        : `${JSON.stringify(result, null, 2)}\n`;
+  const out = str(flags.out);
+  if (out) {
+    writeFileSync(out, output);
+    process.stderr.write(`Wrote ${out}\n`);
+  } else {
+    process.stdout.write(output);
+  }
   if (result.warnings.length > 0) {
     process.stderr.write(`\n${result.warnings.length} warning(s):\n`);
     for (const w of result.warnings) process.stderr.write(`  - ${w.field}: ${w.message}\n`);
@@ -216,6 +242,75 @@ async function cmdMcp(positionals: string[], flags: Flags): Promise<void> {
   process.stderr.write(`daddyapi MCP server for "${spec.name}" ready on stdio (${spec.resources.length} tool(s))\n`);
 }
 
+function defaultBaselinePath(specPath: string): string {
+  return specPath.replace(SPEC_EXT, '') + '.baseline.json';
+}
+
+async function cmdCheck(positionals: string[], flags: Flags): Promise<void> {
+  const [specPath] = positionals;
+  if (!specPath) {
+    throw new Error(
+      'Usage: daddyapi check <spec> [--baseline file] [--update-baseline] [--json] [--only a,b] [--pages N] [--cache [dir]]',
+    );
+  }
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'check'));
+  const hooks = await resolveHooks(spec, specPath);
+  const baselinePath = str(flags.baseline) ?? defaultBaselinePath(specPath);
+  const update = flags['update-baseline'] === true;
+  let baseline: Baseline | undefined;
+  if (!update && existsSync(baselinePath)) {
+    baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as Baseline;
+  } else if (!update && str(flags.baseline)) {
+    throw new Error(`Baseline file not found: ${baselinePath} (create it with --update-baseline)`);
+  }
+  const only = list(flags.only);
+  for (const name of only) getResource(spec, name);
+  const report = await checkSpec(spec, {
+    hooks,
+    fetcher: buildFetcher(spec, flags),
+    baseline,
+    only: only.length > 0 ? only : undefined,
+    pages: positiveIntFlag(flags, 'pages'),
+  });
+
+  if (flags.json === true) {
+    process.stdout.write(`${JSON.stringify({ ...report, baseline: baseline ? baselinePath : null }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`${formatReport(report)}\n`);
+    if (baseline) process.stdout.write(`  Compared with ${baselinePath}\n`);
+  }
+
+  if (update) {
+    if (!report.ok) {
+      process.stderr.write('\nNot saving a baseline from a failing check; fix the problems first.\n');
+    } else {
+      writeFileSync(baselinePath, `${JSON.stringify(baselineFromReport(report), null, 2)}\n`);
+      process.stderr.write(`\nSaved baseline to ${baselinePath}\n`);
+    }
+  }
+
+  const statuses = report.resources.map((r) => r.status);
+  if (statuses.includes('fail')) process.exitCode = 1;
+  else if (statuses.includes('error')) process.exitCode = 2;
+}
+
+function cmdTypes(positionals: string[], flags: Flags): void {
+  const [specPath] = positionals;
+  if (!specPath) throw new Error('Usage: daddyapi types <spec> [--out client.ts] [--json-schema]');
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'types'));
+  const output =
+    flags['json-schema'] === true
+      ? `${JSON.stringify(generateJsonSchema(spec), null, 2)}\n`
+      : generateTypeScript(spec);
+  const out = str(flags.out);
+  if (out) {
+    writeFileSync(out, output);
+    process.stderr.write(`Wrote ${out}\n`);
+  } else {
+    process.stdout.write(output);
+  }
+}
+
 function cmdValidate(positionals: string[]): void {
   const [specPath] = positionals;
   if (!specPath) throw new Error('Usage: daddyapi validate <spec>');
@@ -283,6 +378,12 @@ Usage:
                                              Serve the spec as an MCP server (stdio) for AI agents
   daddyapi run <spec> <resource> [--pages N] [--params k=v,...] [--cache [dir]]
                                              Fetch one resource and print JSON
+                 run also takes --format json|csv|ndjson and --out file
+  daddyapi check <spec> [--update-baseline] [--json]
+                                             Check every resource against its data contract
+                                             and baseline; exit 1 if the site changed
+  daddyapi types <spec> [--out client.ts] [--json-schema]
+                                             Generate TypeScript types and a typed API client
 
   --cache [dir]  Persist fetched pages to disk (default dir: .daddyapi-cache),
                  so repeated runs don't re-hit the site.
@@ -305,6 +406,10 @@ async function main(): Promise<void> {
       return cmdDev(positionals, flags);
     case 'mcp':
       return cmdMcp(positionals, flags);
+    case 'check':
+      return cmdCheck(positionals, flags);
+    case 'types':
+      return cmdTypes(positionals, flags);
     case 'validate':
       return cmdValidate(positionals);
     case 'init':
