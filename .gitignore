@@ -9,3 +9,7 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Some global gitignores list "core" (for crash dumps), which would hide new
+# files in packages/core. Never ignore the core package.
+!packages/core/
