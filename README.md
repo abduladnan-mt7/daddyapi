@@ -1,11 +1,14 @@
 # daddyapi
 
 [![CI](https://github.com/abduladnan-mt7/daddyapi/actions/workflows/ci.yml/badge.svg)](https://github.com/abduladnan-mt7/daddyapi/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@daddyapi/cli.svg)](https://www.npmjs.com/package/@daddyapi/cli)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Good first issues](https://img.shields.io/github/issues/abduladnan-mt7/daddyapi/good%20first%20issue?label=good%20first%20issues&color=7057ff)](https://github.com/abduladnan-mt7/daddyapi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 **Point it at a bot-friendly website. Get a documented API.**
+
+![daddyapi turning quotes.toscrape.com into a live API with Swagger docs](./docs/assets/demo.gif)
 
 daddyapi turns a website into a clean, cached, documented API — described by one
 declarative **SiteSpec** file. From that single file you get **both** a callable
@@ -39,19 +42,24 @@ caching, normalization, and documentation for you.
 ## Install
 
 ```bash
-# Requires Node.js >= 20 and pnpm
+# Requires Node.js >= 20
+npm i -g @daddyapi/cli
+daddyapi help
+```
+
+Or run it without installing: `npx @daddyapi/cli help`. To use the engine from
+code, install [`@daddyapi/core`](https://www.npmjs.com/package/@daddyapi/core)
+(see [Use it as a library](#use-it-as-a-library)).
+
+From source, for development:
+
+```bash
 git clone https://github.com/abduladnan-mt7/daddyapi.git
 cd daddyapi
 pnpm install
 pnpm build
-# Run the CLI
 node packages/cli/dist/index.js help
 ```
-
-The packages (`@daddyapi/cli`, `@daddyapi/core`, `@daddyapi/spec`) are
-publish-ready; once released you'll be able to `npm i -g @daddyapi/cli`. The
-release pipeline is wired up in `.github/workflows/release.yml` — publishing just
-needs an `NPM_TOKEN` secret and a `vX.Y.Z` tag (see CONTRIBUTING).
 
 ## Quick start
 
