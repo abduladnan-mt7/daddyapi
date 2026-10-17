@@ -99,7 +99,7 @@ export function toolOutputShape(resource: Resource): ZodRawShape {
 
 function toolDescription(spec: SiteSpec, resource: Resource): string {
   const inputs = resourceInputs(resource);
-  const what = resource.description ?? `${resource.name} from ${spec.name}`;
+  const what = (resource.description ?? `${resource.name} from ${spec.name}`).trim().replace(/[.\s]+$/, '');
   const kind = inputs.isList
     ? `Returns a list of rows with fields: ${inputs.fieldNames.join(', ')}.`
     : `Returns one object with fields: ${inputs.fieldNames.join(', ')}.`;

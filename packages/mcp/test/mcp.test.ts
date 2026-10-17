@@ -124,3 +124,24 @@ describe('toolName', () => {
     expect(toolName(spec.resources[0]!, 'my-site')).toBe('my_site_quotes');
   });
 });
+
+describe('tool descriptions', () => {
+  it('reads cleanly when the spec description already ends with a period', async () => {
+    const dotted = parseSiteSpec(`
+name: s
+baseUrl: https://s.example.com
+resources:
+  - name: r
+    description: Things from the site.
+    fetch: { path: / }
+    list: { selector: .r, fields: { a: .a } }
+`);
+    const server = createMcpServer(dotted, { fetcher: testFetcher({}) });
+    const client = new Client({ name: 't', version: '1' });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(s), client.connect(c)]);
+    const { tools } = await client.listTools();
+    expect(tools[0]!.description).toMatch(/^Things from the site\. Returns a list/);
+    expect(tools[0]!.description).not.toContain('..');
+  });
+});
