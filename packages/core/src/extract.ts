@@ -131,6 +131,18 @@ function applyTransform(
       } catch {
         return str;
       }
+    case 'date': {
+      const ms = Date.parse(str);
+      if (Number.isNaN(ms)) return null;
+      const d = new Date(ms);
+      // Text without a time ("14 June 2026", "2026-06-14") is a calendar date:
+      // take the local calendar day so the timezone can't shift it a day.
+      if (!/\d{1,2}:\d{2}/.test(str)) {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      }
+      return d.toISOString();
+    }
     default: {
       // Not a built-in — try the spec's code escape-hatch.
       const custom = context.hooks?.transforms?.[name];
