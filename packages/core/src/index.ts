@@ -8,3 +8,6 @@ export * from './runtime';
 export * from './openapi';
 export * from './serve';
 export * from './infer';
+export * from './check';
+export * from './codegen';
+export * from './format';

@@ -88,13 +88,22 @@ export function buildOpenApi(spec: SiteSpec, options: OpenApiOptions = {}): Json
         },
       );
     }
-    parameters.push({
-      name: 'fields',
-      in: 'query',
-      required: false,
-      description: `Comma-separated subset of fields to return: ${inputs.fieldNames.join(', ')}.`,
-      schema: { type: 'string' },
-    });
+    parameters.push(
+      {
+        name: 'fields',
+        in: 'query',
+        required: false,
+        description: `Comma-separated subset of fields to return: ${inputs.fieldNames.join(', ')}.`,
+        schema: { type: 'string' },
+      },
+      {
+        name: 'format',
+        in: 'query',
+        required: false,
+        description: 'Response format: the JSON envelope (default), CSV, or newline-delimited JSON rows.',
+        schema: { type: 'string', enum: ['json', 'csv', 'ndjson'], default: 'json' },
+      },
+    );
 
     const responses: Record<string, unknown> = {
       '200': {
@@ -116,6 +125,8 @@ export function buildOpenApi(spec: SiteSpec, options: OpenApiOptions = {}): Json
               },
             },
           },
+          'text/csv': { schema: { type: 'string' } },
+          'application/x-ndjson': { schema: { type: 'string' } },
         },
       },
       '304': { description: 'Not modified (matches If-None-Match)' },

@@ -6,7 +6,8 @@ import { etag } from 'hono/etag';
 import { createFetcher, FetchError, type PoliteFetcher } from './fetch';
 import type { Hooks } from './hooks';
 import { buildOpenApi } from './openapi';
-import { DEFAULT_MAX_PAGES_LIMIT, ParamError, parseResourceQuery, shapeData } from './params';
+import { FORMAT_CONTENT_TYPES, toCsv, toNdjson } from './format';
+import { DEFAULT_MAX_PAGES_LIMIT, ParamError, parseResourceQuery, resourceInputs, shapeData } from './params';
 import { runResource } from './runtime';
 
 export interface RateLimitOptions {
@@ -146,6 +147,7 @@ export function createServer(spec: SiteSpec, options: ServeOptions = {}): Hono {
           'RateLimit-Remaining',
           'RateLimit-Reset',
           'Retry-After',
+          'X-Extraction-Warnings',
         ],
         maxAge: 600,
       }),
@@ -243,12 +245,20 @@ export function createServer(spec: SiteSpec, options: ServeOptions = {}): Hono {
         // The ETag covers the content (data + warnings), not meta.fetchedAt, so
         // an unchanged page really does come back as 304 Not Modified.
         const tag = `W/"${createHash('sha1')
-          .update(JSON.stringify([shaped.data, result.warnings]))
+          .update(JSON.stringify([query.format ?? 'json', shaped.data, result.warnings]))
           .digest('base64url')}"`;
         c.header('ETag', tag);
         const ifNoneMatch = c.req.header('if-none-match');
         if (ifNoneMatch && ifNoneMatch.split(',').some((t) => t.trim() === tag || t.trim() === '*')) {
           return c.body(null, 304);
+        }
+        if (query.format === 'csv' || query.format === 'ndjson') {
+          const columns = query.fields ?? resourceInputs(resource).fieldNames;
+          const text = query.format === 'csv' ? toCsv(shaped.data, columns) : toNdjson(shaped.data);
+          c.header('Content-Type', FORMAT_CONTENT_TYPES[query.format]);
+          if (query.format === 'csv') c.header('Content-Disposition', `inline; filename="${resource.name}.csv"`);
+          if (result.warnings.length > 0) c.header('X-Extraction-Warnings', String(result.warnings.length));
+          return c.body(text);
         }
         return c.json({
           data: shaped.data,
