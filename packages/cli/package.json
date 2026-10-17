@@ -1,6 +1,6 @@
 {
   "name": "@daddyapi/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "The daddyapi command line: init, dev, mcp, run, check, types, validate, build.",
   "license": "MIT",

@@ -126,7 +126,7 @@ export function createMcpServer(spec: SiteSpec, options: McpServerOptions = {}):
   const fetcher = options.fetcher ?? createFetcher(spec.politeness);
   const maxPagesLimit = options.maxPagesLimit ?? DEFAULT_MAX_PAGES_LIMIT;
   const server = new McpServer(
-    { name: `daddyapi-${spec.name}`, version: options.version ?? '0.1.0' },
+    { name: `daddyapi-${spec.name}`, version: options.version ?? '0.2.0' },
     {
       instructions:
         `Tools for ${spec.name} (${spec.baseUrl})${spec.description ? `: ${spec.description}` : ''}. ` +

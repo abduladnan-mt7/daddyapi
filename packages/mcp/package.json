@@ -1,6 +1,6 @@
 {
   "name": "@daddyapi/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Serve a daddyapi SiteSpec as an MCP server: each resource becomes a typed, read-only tool for AI agents.",
   "license": "MIT",

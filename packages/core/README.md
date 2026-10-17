@@ -18,6 +18,12 @@ Highlights:
 - `runResource` / `createClient` — fetch → extract → normalize, with pagination.
 - `createServer` — one route per resource, generated OpenAPI 3 + Swagger UI.
 - `buildOpenApi` — derive an OpenAPI document from a spec.
+- `createServer` options — API keys, per-client rate limiting, CORS, ETags,
+  `?limit/offset/fields/format`, JSON errors with request ids, `/health`.
+- `checkSpec` / `evaluateResource` / `compareToBaseline` — data contracts and
+  drift detection behind `daddyapi check`.
+- `generateTypeScript` / `generateJsonSchema` — typed client and schema codegen.
+- `toCsv` / `toNdjson` — export helpers.
 - `inferSpec` — best-effort crawler that drafts a SiteSpec.
 
 MIT
