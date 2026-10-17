@@ -10,6 +10,8 @@ const TRANSFORM_TYPES: Record<string, FieldValueType> = {
   lower: 'string',
   upper: 'string',
   url: 'string',
+  // ISO 8601 text; the built-in 'date' transform (issue #2).
+  date: 'string',
   int: 'number',
   float: 'number',
   number: 'number',
