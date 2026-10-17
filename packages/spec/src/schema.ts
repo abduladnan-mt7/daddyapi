@@ -99,6 +99,37 @@ export const itemSpecSchema = z
   .strict();
 export type ItemSpec = z.infer<typeof itemSpecSchema>;
 
+/** A data contract for one field, checked by `daddyapi check`. */
+export const fieldExpectSchema = z
+  .object({
+    /** Share of rows (0-1) that must have a non-empty value. Default 0.9 for required fields. */
+    fillRate: z.number().min(0).max(1).optional(),
+    /** Every non-empty value must match this regular expression. */
+    pattern: z.string().optional(),
+    /** Numeric bounds for number fields. */
+    min: z.number().optional(),
+    max: z.number().optional(),
+  })
+  .strict();
+export type FieldExpect = z.infer<typeof fieldExpectSchema>;
+
+/**
+ * What healthy output looks like for a resource, so `daddyapi check` can tell
+ * when the site changed and the spec quietly stopped working.
+ */
+export const expectSchema = z
+  .object({
+    /** List resources: fewest/most rows a healthy run returns. */
+    minRows: z.number().int().nonnegative().optional(),
+    maxRows: z.number().int().positive().optional(),
+    /** Example values for `{param}` placeholders, used when checking. */
+    params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+    /** Per-field contracts, keyed by field name. */
+    fields: z.record(z.string(), fieldExpectSchema).optional(),
+  })
+  .strict();
+export type Expect = z.infer<typeof expectSchema>;
+
 export const resourceSchema = z
   .object({
     name: z
@@ -110,6 +141,8 @@ export const resourceSchema = z
     item: itemSpecSchema.optional(),
     /** Name of a function in the spec's `hooks` module to post-process this resource's data. */
     postProcess: z.string().optional(),
+    /** Data contract checked by `daddyapi check`. */
+    expect: expectSchema.optional(),
   })
   .strict()
   .refine((r) => r.list !== undefined || r.item !== undefined, {
