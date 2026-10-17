@@ -23,11 +23,17 @@ import {
   type RateLimitOptions,
   resourceInputs,
   runResource,
+  buildWatchEvent,
+  diffData,
+  formatWatchEvent,
+  hasChanges,
+  signPayload,
   toCsv,
   toNdjson,
+  type WatchState,
 } from '@daddyapi/core';
 import { serveMcpStdio } from '@daddyapi/mcp';
-import { loadSiteSpec, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
+import { loadSiteSpec, parseDuration, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
 import { stringify as toYaml } from 'yaml';
 
 type Flags = Record<string, string | boolean>;
@@ -294,6 +300,124 @@ async function cmdCheck(positionals: string[], flags: Flags): Promise<void> {
   else if (statuses.includes('error')) process.exitCode = 2;
 }
 
+const MIN_WATCH_INTERVAL_MS = 30_000;
+
+async function cmdWatch(positionals: string[], flags: Flags): Promise<void> {
+  const [specPath, resourceName] = positionals;
+  if (!specPath || !resourceName) {
+    throw new Error(
+      'Usage: daddyapi watch <spec> <resource> [--key f1,f2] [--every 10m] [--once] [--state file] ' +
+        '[--webhook url] [--webhook-secret s] [--params k=v,...] [--pages N] [--json] [--cache [dir]]',
+    );
+  }
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'watch'));
+  const resource = getResource(spec, resourceName);
+  const hooks = await resolveHooks(spec, specPath);
+  const fields = resourceInputs(resource).fieldNames;
+  const keyFields = list(flags.key);
+  const unknownKeys = keyFields.filter((k) => !fields.includes(k));
+  if (unknownKeys.length > 0) {
+    throw new Error(`--key ${unknownKeys.join(', ')} is not a field of "${resource.name}". Fields: ${fields.join(', ')}`);
+  }
+  const intervalMs = parseDuration(str(flags.every) ?? '10m');
+  if (intervalMs < MIN_WATCH_INTERVAL_MS) throw new Error('--every must be at least 30s, to stay polite to the site');
+  const statePath = str(flags.state) ?? `${specPath.replace(SPEC_EXT, '')}.${resource.name}.watch.json`;
+  const webhook = str(flags.webhook);
+  const secret = str(flags['webhook-secret']) ?? process.env.DADDYAPI_WEBHOOK_SECRET;
+  const asJson = flags.json === true;
+  const fetcher = buildFetcher(spec, flags);
+  const params = parseParams(str(flags.params));
+  const pages = positiveIntFlag(flags, 'pages');
+  const log = (line: string) => process.stderr.write(`[${new Date().toISOString()}] ${line}\n`);
+
+  const tick = async (): Promise<void> => {
+    const result = await runResource(spec, resource, { fetcher, hooks, params, maxPages: pages });
+    const previous = existsSync(statePath) ? (JSON.parse(readFileSync(statePath, 'utf8')) as WatchState) : undefined;
+    const save = () => {
+      const state: WatchState = {
+        version: 1,
+        spec: spec.name,
+        resource: resource.name,
+        key: keyFields,
+        updatedAt: result.meta.fetchedAt,
+        data: result.data,
+      };
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+    };
+
+    if (!previous) {
+      save();
+      const count = Array.isArray(result.data) ? `${result.data.length} rows` : 'the item';
+      log(`Baseline saved: watching ${count} of "${resource.name}" (${statePath})`);
+      return;
+    }
+    if (previous.key.join(',') !== keyFields.join(',')) {
+      throw new Error(
+        `${statePath} was saved with --key ${previous.key.join(',') || '(none)'}; ` +
+          `pass the same --key, or delete the file to start over`,
+      );
+    }
+
+    const diff = diffData(previous.data, result.data, keyFields);
+    if (!hasChanges(diff)) {
+      log(`No changes (${diff.total} ${Array.isArray(result.data) ? 'rows' : 'item'})`);
+      save();
+      return;
+    }
+
+    const event = buildWatchEvent(spec.name, resource.name, result.meta.source, diff, result.meta.fetchedAt);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify(event)}\n`);
+    } else {
+      const { added, removed, changed } = event.summary;
+      process.stdout.write(`\n${resource.name}: ${added} added, ${removed} removed, ${changed} changed\n`);
+      for (const line of formatWatchEvent(event, keyFields)) process.stdout.write(`  ${line}\n`);
+    }
+
+    if (webhook) {
+      const body = JSON.stringify(event);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'daddyapi-watch',
+        'X-Daddyapi-Event': 'change',
+      };
+      if (secret) headers['X-Daddyapi-Signature'] = signPayload(body, secret);
+      try {
+        const res = await fetch(webhook, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        log(`Webhook delivered (${res.status})`);
+      } catch (err) {
+        // Keep the old state so the same changes are sent again next time.
+        log(`Webhook failed (${err instanceof Error ? err.message : String(err)}); will retry these changes next run`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    save();
+  };
+
+  if (flags.once === true) {
+    await tick();
+    return;
+  }
+
+  log(`Watching "${resource.name}" every ${str(flags.every) ?? '10m'}${webhook ? ` → ${webhook}` : ''}. Ctrl+C to stop.`);
+  let stopping = false;
+  process.on('SIGINT', () => {
+    stopping = true;
+    log('Stopping.');
+    process.exit(0);
+  });
+  while (!stopping) {
+    try {
+      await tick();
+    } catch (err) {
+      log(`Run failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalMs));
+  }
+}
+
 function cmdTypes(positionals: string[], flags: Flags): void {
   const [specPath] = positionals;
   if (!specPath) throw new Error('Usage: daddyapi types <spec> [--out client.ts] [--json-schema]');
@@ -384,6 +508,9 @@ Usage:
                                              and baseline; exit 1 if the site changed
   daddyapi types <spec> [--out client.ts] [--json-schema]
                                              Generate TypeScript types and a typed API client
+  daddyapi watch <spec> <resource> [--key field] [--every 10m] [--webhook url] [--once]
+                                             Report rows added, removed or changed on the site,
+                                             optionally to a signed webhook
 
   --cache [dir]  Persist fetched pages to disk (default dir: .daddyapi-cache),
                  so repeated runs don't re-hit the site.
@@ -410,6 +537,8 @@ async function main(): Promise<void> {
       return cmdCheck(positionals, flags);
     case 'types':
       return cmdTypes(positionals, flags);
+    case 'watch':
+      return cmdWatch(positionals, flags);
     case 'validate':
       return cmdValidate(positionals);
     case 'init':

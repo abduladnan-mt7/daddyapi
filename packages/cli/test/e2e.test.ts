@@ -293,3 +293,81 @@ resources:
     expect(Object.keys(schema.$defs)).toEqual(['Quotes', 'Secret']);
   });
 });
+
+describe.skipIf(!built)('e2e: watch', () => {
+  it('saves a baseline, detects changes, and delivers a signed webhook (retrying after a failure)', async () => {
+    const { createHmac } = await import('node:crypto');
+    const state = join(dir, 'quotes.watch.json');
+    const received: Array<{ body: string; signature?: string }> = [];
+    let failNext = true;
+    const hook = createServer((req, res) => {
+      let body = '';
+      req.on('data', (d) => (body += d));
+      req.on('end', () => {
+        if (failNext) {
+          failNext = false;
+          res.writeHead(500).end();
+          return;
+        }
+        received.push({ body, signature: req.headers['x-daddyapi-signature'] as string | undefined });
+        res.writeHead(204).end();
+      });
+    });
+    await new Promise<void>((resolve) => hook.listen(0, '127.0.0.1', resolve));
+    const hookUrl = `http://127.0.0.1:${(hook.address() as AddressInfo).port}/hook`;
+    const args = ['watch', specPath, 'quotes', '--key', 'text', '--once', '--state', state, '--pages', '1'];
+
+    try {
+      const first = await run([...args, '--json']);
+      expect(first.code).toBe(0);
+      expect(first.stderr).toContain('Baseline saved: watching 3 rows');
+      expect(first.stdout).toBe('');
+
+      const unchanged = await run([...args, '--json']);
+      expect(unchanged.stderr).toContain('No changes (3 rows)');
+
+      const original = pages['/']!;
+      const firstAuthor = /class="author">([^<]+)</.exec(original)![1]!;
+      pages['/'] = original.replace(`class="author">${firstAuthor}<`, 'class="author">Someone Else<');
+      try {
+        const withHook = [...args, '--json', '--webhook', hookUrl, '--webhook-secret', 'sh'];
+
+        // The receiver fails the first delivery: exit 1 and keep the old state.
+        const failed = await run(withHook);
+        expect(failed.code).toBe(1);
+        expect(failed.stderr).toContain('Webhook failed');
+
+        // Next run sends the same change again, signed.
+        const delivered = await run(withHook);
+        expect(delivered.code).toBe(0);
+        const event = JSON.parse(delivered.stdout) as {
+          summary: Record<string, number>;
+          changed: Array<{ fields: Array<{ field: string; before: unknown; after: unknown }> }>;
+        };
+        expect(event.summary).toMatchObject({ added: 0, removed: 0, changed: 1 });
+        expect(event.changed[0]!.fields).toEqual([{ field: 'author', before: firstAuthor, after: 'Someone Else' }]);
+
+        expect(received).toHaveLength(1);
+        const expected = `sha256=${createHmac('sha256', 'sh').update(received[0]!.body).digest('hex')}`;
+        expect(received[0]!.signature).toBe(expected);
+
+        // Delivered, so the state moved on.
+        expect((await run([...args, '--json'])).stderr).toContain('No changes');
+      } finally {
+        pages['/'] = original;
+      }
+
+      const human = await run(args.filter((a) => a !== '--once').concat('--once'));
+      expect(human.stdout).toContain('quotes: 0 added, 0 removed, 1 changed');
+      expect(human.stdout).toMatch(/~ changed .*\(author: Someone Else → /);
+    } finally {
+      await new Promise<void>((resolve) => hook.close(() => resolve()));
+    }
+  }, 60_000);
+
+  it('refuses a too-short interval', async () => {
+    const res = await run(['watch', specPath, 'quotes', '--every', '5s']);
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('at least 30s');
+  });
+});

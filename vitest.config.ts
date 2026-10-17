@@ -14,5 +14,7 @@ export default defineConfig({
   test: {
     include: ['packages/**/*.test.ts'],
     environment: 'node',
+    // The CLI end-to-end tests start real processes, which can take a few seconds on slow CI runners.
+    testTimeout: 20_000,
   },
 });

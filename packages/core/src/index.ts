@@ -11,3 +11,4 @@ export * from './infer';
 export * from './check';
 export * from './codegen';
 export * from './format';
+export * from './watch';
