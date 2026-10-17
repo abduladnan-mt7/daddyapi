@@ -18,6 +18,12 @@ import { stringify as toYaml } from 'yaml';
 
 type Flags = Record<string, string | boolean>;
 
+// Read from the package manifest next to the built file, so `--version` reports
+// what npm published without a bundler inlining step.
+const { version } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
+) as { version: string };
+
 function parseFlags(args: string[]): { positionals: string[]; flags: Flags } {
   const positionals: string[] = [];
   const flags: Flags = {};
@@ -178,6 +184,7 @@ Usage:
   daddyapi validate <spec>                   Check a spec against the schema
   daddyapi build <spec> [--out openapi.json] Emit the OpenAPI document
   daddyapi help                              Show this help
+  daddyapi --version, -v                     Print the version
 
 Docs & examples: https://github.com/abduladnan-mt7/daddyapi
 `);
@@ -203,6 +210,10 @@ async function main(): Promise<void> {
     case '--help':
     case '-h':
       return printHelp();
+    case '--version':
+    case '-v':
+      process.stdout.write(`${version}\n`);
+      return;
     default:
       process.stderr.write(`Unknown command: ${command}\n\n`);
       printHelp();
