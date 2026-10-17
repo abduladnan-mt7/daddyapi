@@ -12,6 +12,9 @@
   the field specs, an optional per-resource `expect` block (`minRows`, `maxRows`,
   example `params`, per-field `fillRate`, `pattern`, `min`, `max`), and baselines
   that flag row drops, fill-rate collapses and type changes. Exit codes 0/1/2 for CI.
+- **`daddyapi watch`**: row-level change events (added, removed, changed with
+  per-field before/after) matched on `--key`, on a schedule or `--once`, with
+  optional HMAC-signed webhooks that are retried when delivery fails.
 - **`daddyapi types`**: TypeScript interfaces plus a dependency-free typed client for
   the served API, or `--json-schema`.
 - **Production HTTP API** in `daddyapi dev` / `createServer`:

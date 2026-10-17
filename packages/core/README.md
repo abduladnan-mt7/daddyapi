@@ -24,6 +24,8 @@ Highlights:
   drift detection behind `daddyapi check`.
 - `generateTypeScript` / `generateJsonSchema` — typed client and schema codegen.
 - `toCsv` / `toNdjson` — export helpers.
+- `diffData` / `buildWatchEvent` / `signPayload` — row-level change detection
+  and signed webhook payloads behind `daddyapi watch`.
 - `inferSpec` — best-effort crawler that drafts a SiteSpec.
 
 MIT

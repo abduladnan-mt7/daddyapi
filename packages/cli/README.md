@@ -15,6 +15,7 @@ daddyapi mcp <spec>                        # serve as an MCP server for AI agent
 daddyapi run <spec> <resource> [--pages N] [--params k=v,...] [--format csv]
 daddyapi check <spec> [--update-baseline]  # data contracts + drift detection (CI-friendly)
 daddyapi types <spec> [--out client.ts]    # TypeScript types + a typed API client
+daddyapi watch <spec> <resource> --key f   # row-level change events, optional signed webhook
 daddyapi validate <spec>                   # check against the schema
 daddyapi build <spec> [--out openapi.json] # emit the OpenAPI document
 ```

@@ -200,6 +200,31 @@ jobs:
       - run: npx -y @daddyapi/cli check specs/quotes.yaml
 ```
 
+## Get told when the data changes (`daddyapi watch`)
+
+Page-change monitors tell you *that a page changed*. Because daddyapi already turns
+the page into rows, `watch` tells you **which rows changed and how**:
+
+```bash
+daddyapi watch books.yaml books --key title --every 1h
+```
+
+```text
+books: 1 added, 0 removed, 1 changed
+  + added    Tipping the Velvet
+  ~ changed  A Light in the Attic  (price: 51.77 → 45.00)
+```
+
+- `--key` names the field(s) that identify a row (a URL or title); without it, any
+  edit shows up as one removal plus one addition.
+- `--webhook https://…` POSTs each change event as JSON. Add `--webhook-secret`
+  (or `DADDYAPI_WEBHOOK_SECRET`) to sign it GitHub-style:
+  `X-Daddyapi-Signature: sha256=<HMAC of the body>`.
+- If a webhook delivery fails, the changes are kept and sent again on the next run.
+- `--once` runs a single comparison and exits, for cron; `--json` prints one
+  event per line. State is saved next to the spec (`<spec>.<resource>.watch.json`).
+- The interval can't go below 30 seconds, to stay polite to the site.
+
 ## Typed client and exports
 
 ```bash
@@ -332,7 +357,7 @@ const mcp = createMcpServer(spec); // connect it to any MCP transport
 | [`@daddyapi/spec`](./packages/spec) | The SiteSpec schema, loader & validator — the language-neutral contract. |
 | [`@daddyapi/core`](./packages/core) | Polite fetching, extraction, the data SDK, the HTTP server, and the crawler. |
 | [`@daddyapi/mcp`](./packages/mcp) | Serve a spec as an MCP server: one typed tool per resource. |
-| [`@daddyapi/cli`](./packages/cli) | The `daddyapi` command: `init`, `dev`, `mcp`, `run`, `check`, `types`, `validate`, `build`. |
+| [`@daddyapi/cli`](./packages/cli) | The `daddyapi` command: `init`, `dev`, `mcp`, `run`, `check`, `watch`, `types`, `validate`, `build`. |
 
 ## Roadmap
 
@@ -341,6 +366,7 @@ const mcp = createMcpServer(spec); // connect it to any MCP transport
 - [x] **Data contracts and drift detection** (`daddyapi check`)
 - [x] API keys, rate limits, CORS, ETags and CSV/NDJSON on served APIs
 - [x] Typed client generation (`daddyapi types`)
+- [x] Row-level change events and signed webhooks (`daddyapi watch`)
 - [ ] **Python runtime** reading the same SiteSpec files
 - [ ] JS-rendered pages (optional Playwright adapter)
 - [ ] Redis cache backend
