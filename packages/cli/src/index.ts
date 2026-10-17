@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { serve } from '@hono/node-server';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import {
   buildOpenApi,
   createFetcher,
@@ -10,9 +11,12 @@ import {
   type Hooks,
   inferSpec,
   loadHooks,
+  normalizeUrl,
   type PoliteFetcher,
+  type RateLimitOptions,
   runResource,
 } from '@daddyapi/core';
+import { serveMcpStdio } from '@daddyapi/mcp';
 import { loadSiteSpec, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
 import { stringify as toYaml } from 'yaml';
 
@@ -41,6 +45,56 @@ function parseFlags(args: string[]): { positionals: string[]; flags: Flags } {
 
 function str(value: string | boolean | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+const SPEC_EXT = /\.(ya?ml|json)$/i;
+
+/**
+ * Commands that read a SiteSpec get a clear message when handed a web address
+ * or a path that doesn't exist, instead of a raw ENOENT or YAML error.
+ */
+function requireSpecFile(path: string, command: string): string {
+  if (existsSync(path)) {
+    if (statSync(path).isDirectory()) throw new Error(`"${path}" is a folder; pass a .yaml or .json spec file`);
+    return path;
+  }
+  const looksLikeUrl =
+    /^https?:\/\//i.test(path) || (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/.*)?$/.test(path) && !SPEC_EXT.test(path));
+  if (looksLikeUrl) {
+    throw new Error(
+      `"${path}" looks like a web address, but "daddyapi ${command}" needs a spec file.\n` +
+        `Create one first:  daddyapi init ${path} --out site.yaml\n` +
+        `Then run:          daddyapi ${command} site.yaml`,
+    );
+  }
+  throw new Error(`Spec file not found: ${path}`);
+}
+
+function list(value: string | boolean | undefined): string[] {
+  return typeof value === 'string'
+    ? value
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+}
+
+/** Parse "60/min", "10/s", "1000/h" or a bare number (per minute). */
+function parseRateLimit(raw: string): RateLimitOptions {
+  const match = /^(\d+)\s*(?:\/\s*(s|sec|second|m|min|minute|h|hr|hour))?$/i.exec(raw.trim());
+  if (!match || Number(match[1]) < 1) {
+    throw new Error(`Invalid --rate-limit "${raw}". Use e.g. 60/min, 10/s or 1000/h`);
+  }
+  const unit = (match[2] ?? 'min').toLowerCase();
+  const windowMs = unit.startsWith('s') ? 1_000 : unit.startsWith('h') ? 3_600_000 : 60_000;
+  return { limit: Number(match[1]), windowMs };
+}
+
+function positiveIntFlag(flags: Flags, name: string): number | undefined {
+  const raw = str(flags[name]);
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) throw new Error(`--${name} must be a whole number of at least 1`);
+  return Number(raw);
 }
 
 async function resolveHooks(spec: SiteSpec, specPath: string): Promise<Hooks | undefined> {
@@ -74,7 +128,7 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
   if (!specPath || !resourceName) {
     throw new Error('Usage: daddyapi run <spec> <resource> [--pages N] [--params k=v,k2=v2]');
   }
-  const spec = loadSiteSpec(specPath);
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'run'));
   const resource = getResource(spec, resourceName);
   const hooks = await resolveHooks(spec, specPath);
   const pagesFlag = str(flags.pages);
@@ -93,27 +147,79 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
 
 async function cmdDev(positionals: string[], flags: Flags): Promise<void> {
   const [specPath] = positionals;
-  if (!specPath) throw new Error('Usage: daddyapi dev <spec> [--port N]');
-  const spec = loadSiteSpec(specPath);
+  if (!specPath) {
+    throw new Error(
+      'Usage: daddyapi dev <spec> [--port N] [--host H] [--cache [dir]] [--cors origin|off] ' +
+        '[--api-key k1,k2] [--rate-limit 60/min] [--max-pages N]',
+    );
+  }
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'dev'));
   const hooks = await resolveHooks(spec, specPath);
   const portFlag = str(flags.port);
   const port = portFlag ? Number(portFlag) : 8787;
-  const app = createServer(spec, { hooks, fetcher: buildFetcher(spec, flags) });
-  serve({ fetch: app.fetch, port });
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid --port "${portFlag}"`);
+  const hostname = str(flags.host);
+  const corsFlag = str(flags.cors);
+  const apiKeys = [...list(flags['api-key']), ...list(process.env.DADDYAPI_API_KEYS)];
+  const rateFlag = str(flags['rate-limit']);
+  const app = createServer(spec, {
+    hooks,
+    fetcher: buildFetcher(spec, flags),
+    cors: corsFlag === 'off' || corsFlag === 'false' ? false : corsFlag ? list(corsFlag) : undefined,
+    apiKeys,
+    rateLimit: rateFlag ? parseRateLimit(rateFlag) : undefined,
+    clientId: (c) => {
+      try {
+        return getConnInfo(c).remote.address;
+      } catch {
+        return undefined;
+      }
+    },
+    maxPagesLimit: positiveIntFlag(flags, 'max-pages'),
+  });
+  const server = serve({ fetch: app.fetch, port, hostname });
+  await new Promise<void>((resolveListening, reject) => {
+    server.once('listening', resolveListening);
+    server.once('error', (err: NodeJS.ErrnoException) =>
+      reject(err.code === 'EADDRINUSE' ? new Error(`Port ${port} is already in use; try --port ${port + 1}`) : err),
+    );
+  });
+  const address = server.address();
+  const actualPort = address && typeof address === 'object' ? address.port : port;
+  const shown = hostname && hostname !== '0.0.0.0' && hostname !== '::' ? hostname : 'localhost';
+  const base = `http://${shown}:${actualPort}`;
   process.stdout.write(`\n  daddyapi serving "${spec.name}"\n`);
-  process.stdout.write(`  API      http://localhost:${port}/\n`);
-  process.stdout.write(`  Docs     http://localhost:${port}/docs\n`);
-  process.stdout.write(`  OpenAPI  http://localhost:${port}/openapi.json\n\n`);
+  process.stdout.write(`  API      ${base}/\n`);
+  process.stdout.write(`  Docs     ${base}/docs\n`);
+  process.stdout.write(`  OpenAPI  ${base}/openapi.json\n`);
+  process.stdout.write(`  Health   ${base}/health\n\n`);
   for (const resource of spec.resources) {
-    process.stdout.write(`  GET http://localhost:${port}/${resource.name}\n`);
+    process.stdout.write(`  GET ${base}/${resource.name}\n`);
   }
+  if (apiKeys.length > 0) process.stdout.write(`\n  Auth: API key required (${apiKeys.length} key(s))\n`);
+  if (rateFlag) process.stdout.write(`  Rate limit: ${rateFlag} per client\n`);
   process.stdout.write('\n  Press Ctrl+C to stop.\n');
+}
+
+async function cmdMcp(positionals: string[], flags: Flags): Promise<void> {
+  const [specPath] = positionals;
+  if (!specPath) throw new Error('Usage: daddyapi mcp <spec> [--cache [dir]] [--prefix name] [--max-pages N]');
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'mcp'));
+  const hooks = await resolveHooks(spec, specPath);
+  await serveMcpStdio(spec, {
+    hooks,
+    fetcher: buildFetcher(spec, flags),
+    toolPrefix: str(flags.prefix),
+    maxPagesLimit: positiveIntFlag(flags, 'max-pages'),
+  });
+  // stdout carries the MCP protocol, so status goes to stderr.
+  process.stderr.write(`daddyapi MCP server for "${spec.name}" ready on stdio (${spec.resources.length} tool(s))\n`);
 }
 
 function cmdValidate(positionals: string[]): void {
   const [specPath] = positionals;
   if (!specPath) throw new Error('Usage: daddyapi validate <spec>');
-  const result = safeParseSiteSpec(readFileSync(specPath, 'utf8'));
+  const result = safeParseSiteSpec(readFileSync(requireSpecFile(specPath, 'validate'), 'utf8'));
   if (result.success) {
     const count = result.data.resources.length;
     process.stdout.write(`OK  ${specPath} is valid (${count} resource(s))\n`);
@@ -134,11 +240,12 @@ function cmdValidate(positionals: string[]): void {
 async function cmdInit(positionals: string[], flags: Flags): Promise<void> {
   const [url] = positionals;
   if (!url) throw new Error('Usage: daddyapi init <url> [--out spec.yaml]');
-  process.stderr.write(`Crawling ${url} ...\n`);
-  const spec = await inferSpec(url);
+  const target = normalizeUrl(url);
+  process.stderr.write(`Crawling ${target} ...\n`);
+  const spec = await inferSpec(target);
   const header =
     '# Auto-generated DRAFT spec — review the selectors before relying on it.\n' +
-    `# Generated by: daddyapi init ${url}\n\n`;
+    `# Generated by: daddyapi init ${target}\n\n`;
   const yaml = header + toYaml(spec);
   const out = str(flags.out);
   if (out) {
@@ -152,7 +259,7 @@ async function cmdInit(positionals: string[], flags: Flags): Promise<void> {
 function cmdBuild(positionals: string[], flags: Flags): void {
   const [specPath] = positionals;
   if (!specPath) throw new Error('Usage: daddyapi build <spec> [--out openapi.json]');
-  const spec = loadSiteSpec(specPath);
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'build'));
   const doc = `${JSON.stringify(buildOpenApi(spec), null, 2)}\n`;
   const out = str(flags.out);
   if (out) {
@@ -170,6 +277,10 @@ Usage:
   daddyapi init <url> [--out spec.yaml]      Crawl a site and write a draft SiteSpec
   daddyapi dev <spec> [--port 8787] [--cache [dir]]
                                              Serve the spec as a live API with Swagger docs
+                 dev also takes --host H, --cors origin|off, --api-key k1,k2
+                 (or DADDYAPI_API_KEYS), --rate-limit 60/min, --max-pages N
+  daddyapi mcp <spec> [--cache [dir]] [--prefix name]
+                                             Serve the spec as an MCP server (stdio) for AI agents
   daddyapi run <spec> <resource> [--pages N] [--params k=v,...] [--cache [dir]]
                                              Fetch one resource and print JSON
 
@@ -192,6 +303,8 @@ async function main(): Promise<void> {
       return cmdRun(positionals, flags);
     case 'dev':
       return cmdDev(positionals, flags);
+    case 'mcp':
+      return cmdMcp(positionals, flags);
     case 'validate':
       return cmdValidate(positionals);
     case 'init':

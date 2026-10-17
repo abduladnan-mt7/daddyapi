@@ -29,6 +29,9 @@ importers:
       '@daddyapi/core':
         specifier: workspace:*
         version: link:../core
+      '@daddyapi/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@daddyapi/spec':
         specifier: workspace:*
         version: link:../spec
@@ -38,6 +41,10 @@ importers:
       yaml:
         specifier: ^2.5.0
         version: 2.9.0
+    devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.32.1
+        version: 1.32.1(zod@3.25.76)
 
   packages/core:
     dependencies:

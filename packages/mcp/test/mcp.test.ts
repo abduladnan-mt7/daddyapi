@@ -2,7 +2,7 @@ import { parseSiteSpec } from '@daddyapi/spec';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
-import { fixture, testFetcher } from '../../core/test/helpers';
+import { fixture, testFetcher } from './helpers';
 import { createMcpServer, toolName } from '../src/index';
 
 const spec = parseSiteSpec(`
