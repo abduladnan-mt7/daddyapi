@@ -3,21 +3,34 @@ import { DEFAULT_MAX_PAGES_LIMIT, resourceInputs } from './params';
 
 type JsonSchema = Record<string, unknown>;
 
-/** JSON Schema type a field's value will have after its transforms. */
-export function fieldValueType(spec: FieldSpec): 'string' | 'number' | 'boolean' {
-  if (typeof spec === 'string') return 'string';
-  const transforms = spec.transform
-    ? Array.isArray(spec.transform)
-      ? spec.transform
-      : [spec.transform]
-    : [];
-  if (transforms.some((t) => t === 'int' || t === 'float' || t === 'number')) return 'number';
-  if (transforms.includes('boolean')) return 'boolean';
-  return 'string';
+export type FieldValueType = 'string' | 'number' | 'boolean' | 'unknown';
+
+const TRANSFORM_TYPES: Record<string, FieldValueType> = {
+  trim: 'string',
+  lower: 'string',
+  upper: 'string',
+  url: 'string',
+  int: 'number',
+  float: 'number',
+  number: 'number',
+  boolean: 'boolean',
+};
+
+/**
+ * The type a field's value has after its transforms. The last transform
+ * decides; a custom hook transform can return anything, so it is 'unknown'.
+ */
+export function fieldValueType(spec: FieldSpec): FieldValueType {
+  if (typeof spec === 'string' || !spec.transform) return 'string';
+  const transforms = Array.isArray(spec.transform) ? spec.transform : [spec.transform];
+  const last = transforms[transforms.length - 1];
+  if (last === undefined) return 'string';
+  return TRANSFORM_TYPES[last] ?? 'unknown';
 }
 
 function fieldSchema(spec: FieldSpec): JsonSchema {
-  const scalar: JsonSchema = { type: fieldValueType(spec) };
+  const valueType = fieldValueType(spec);
+  const scalar: JsonSchema = valueType === 'unknown' ? {} : { type: valueType };
   if (typeof spec !== 'string' && spec.many) return { type: 'array', items: scalar };
   if (typeof spec !== 'string' && spec.optional) return { ...scalar, nullable: true };
   return scalar;

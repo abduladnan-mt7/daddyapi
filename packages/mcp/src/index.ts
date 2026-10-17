@@ -37,8 +37,15 @@ export function toolName(resource: Resource, prefix?: string): string {
 }
 
 function fieldType(spec: FieldSpec): ZodTypeAny {
+  const valueType = fieldValueType(spec);
   const scalar =
-    fieldValueType(spec) === 'number' ? z.number() : fieldValueType(spec) === 'boolean' ? z.boolean() : z.string();
+    valueType === 'number'
+      ? z.number()
+      : valueType === 'boolean'
+        ? z.boolean()
+        : valueType === 'unknown'
+          ? z.unknown()
+          : z.string();
   const value = typeof spec !== 'string' && spec.many ? z.array(scalar) : scalar;
   // Fields can come back null when a page is missing them, and `fields`
   // selection can drop any of them, so every field is optional in the output.
