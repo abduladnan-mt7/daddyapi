@@ -71,4 +71,18 @@ describe('extractFields with the date transform', () => {
   it('returns null for an unparseable value', () => {
     expect(parseDate('sometime last week')).toBeNull();
   });
+
+  it('keeps an ISO date-only value the same day west of UTC', () => {
+    const prior = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      // Date.parse reads date-only ISO strings as UTC midnight; without the
+      // UTC-day branch this lands on 2026-06-13 in a negative offset.
+      expect(parseDate('2026-06-14')).toBe('2026-06-14');
+      expect(parseDate('14 June 2026')).toBe('2026-06-14');
+    } finally {
+      if (prior === undefined) delete process.env.TZ;
+      else process.env.TZ = prior;
+    }
+  });
 });
