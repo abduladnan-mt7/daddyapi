@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import {
   buildOpenApi,
@@ -18,7 +19,7 @@ import { stringify as toYaml } from 'yaml';
 
 type Flags = Record<string, string | boolean>;
 
-function parseFlags(args: string[]): { positionals: string[]; flags: Flags } {
+export function parseFlags(args: string[]): { positionals: string[]; flags: Flags } {
   const positionals: string[] = [];
   const flags: Flags = {};
   for (let i = 0; i < args.length; i++) {
@@ -183,7 +184,7 @@ Docs & examples: https://github.com/abduladnan-mt7/daddyapi
 `);
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const { positionals, flags } = parseFlags(rest);
 
@@ -210,7 +211,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-  process.exitCode = 1;
-});
+if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+  main().catch((err: unknown) => {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.exitCode = 1;
+  });
+}
