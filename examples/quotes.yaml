@@ -21,6 +21,29 @@ resources:
         tags:
           selector: .tags a.tag
           many: true
+    # Data contract for `daddyapi check`: what healthy output looks like.
+    expect:
+      minRows: 10
+      fields:
+        text: { fillRate: 1, pattern: "^“" }
+        author: { fillRate: 1 }
+
+  - name: author
+    description: One author's biography. Pass the slug from an author link, e.g. Albert-Einstein.
+    fetch:
+      path: /author/{slug}/
+    item:
+      fields:
+        name: h3.author-title
+        born: span.author-born-date
+        bornIn:
+          selector: span.author-born-location
+          transform: trim
+        bio:
+          selector: div.author-description
+          transform: trim
+    expect:
+      params: { slug: Albert-Einstein }   # example value so `check` can run it
 
   - name: tags
     description: Popular tags from the sidebar.
@@ -34,3 +57,5 @@ resources:
           selector: a
           attr: href
           transform: url
+    expect:
+      minRows: 5
