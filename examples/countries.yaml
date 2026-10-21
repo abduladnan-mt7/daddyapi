@@ -1,0 +1,22 @@
+name: countries
+baseUrl: https://www.scrapethissite.com
+description: >-
+  Countries of the world from Scrape This Site's public sandbox for scraping
+  practice.
+
+resources:
+  - name: countries
+    description: Countries with their name, capital, population, and area.
+    fetch:
+      path: /pages/simple/
+    list:
+      selector: .country
+      fields:
+        name: .country-name
+        capital: .country-capital
+        population:
+          selector: .country-population
+          transform: int
+        area:
+          selector: .country-area
+          transform: float
