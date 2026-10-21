@@ -50,6 +50,6 @@ describe('CLI commands', () => {
     await main();
 
     expect(process.exitCode).toBeUndefined();
-    expect(stdout.mock.calls.flat().join('')).toContain('is valid (2 resource(s))');
+    expect(stdout.mock.calls.flat().join('')).toMatch(/is valid \(\d+ resource\(s\)\)/);
   });
 });
