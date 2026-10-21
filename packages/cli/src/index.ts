@@ -173,11 +173,13 @@ Usage:
   daddyapi run <spec> <resource> [--pages N] [--params k=v,...] [--cache [dir]]
                                              Fetch one resource and print JSON
 
-  --cache [dir]  Persist fetched pages to disk (default dir: .daddyapi-cache),
-                 so repeated runs don't re-hit the site.
   daddyapi validate <spec>                   Check a spec against the schema
   daddyapi build <spec> [--out openapi.json] Emit the OpenAPI document
   daddyapi help                              Show this help
+
+Options:
+  --cache [dir]   Persist fetched pages to disk (default dir: .daddyapi-cache),
+                  so repeated runs don't re-hit the site.
 
 Docs & examples: https://github.com/abduladnan-mt7/daddyapi
 `);
