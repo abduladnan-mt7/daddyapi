@@ -1,6 +1,6 @@
 {
   "name": "@daddyapi/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "daddyapi runtime: polite fetching, extraction, the data SDK, the HTTP server, and the crawler/infer engine.",
   "license": "MIT",

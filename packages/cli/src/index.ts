@@ -1,23 +1,49 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import {
+  type Baseline,
+  baselineFromReport,
   buildOpenApi,
+  checkSpec,
   createFetcher,
   createServer,
+  DATA_FORMATS,
   FileCache,
+  formatReport,
+  generateJsonSchema,
+  generateTypeScript,
   getResource,
   type Hooks,
   inferSpec,
   loadHooks,
+  normalizeUrl,
   type PoliteFetcher,
+  type RateLimitOptions,
+  resourceInputs,
   runResource,
+  buildWatchEvent,
+  diffData,
+  formatWatchEvent,
+  hasChanges,
+  signPayload,
+  toCsv,
+  toNdjson,
+  type WatchState,
 } from '@daddyapi/core';
-import { loadSiteSpec, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
+import { serveMcpStdio } from '@daddyapi/mcp';
+import { loadSiteSpec, parseDuration, type SiteSpec, safeParseSiteSpec } from '@daddyapi/spec';
 import { stringify as toYaml } from 'yaml';
 
 type Flags = Record<string, string | boolean>;
+
+// Read from the package manifest next to the built file, so `--version` reports
+// what npm published without a bundler inlining step.
+const { version } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
+) as { version: string };
 
 export function parseFlags(args: string[]): { positionals: string[]; flags: Flags } {
   const positionals: string[] = [];
@@ -42,6 +68,56 @@ export function parseFlags(args: string[]): { positionals: string[]; flags: Flag
 
 function str(value: string | boolean | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+const SPEC_EXT = /\.(ya?ml|json)$/i;
+
+/**
+ * Commands that read a SiteSpec get a clear message when handed a web address
+ * or a path that doesn't exist, instead of a raw ENOENT or YAML error.
+ */
+function requireSpecFile(path: string, command: string): string {
+  if (existsSync(path)) {
+    if (statSync(path).isDirectory()) throw new Error(`"${path}" is a folder; pass a .yaml or .json spec file`);
+    return path;
+  }
+  const looksLikeUrl =
+    /^https?:\/\//i.test(path) || (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/.*)?$/.test(path) && !SPEC_EXT.test(path));
+  if (looksLikeUrl) {
+    throw new Error(
+      `"${path}" looks like a web address, but "daddyapi ${command}" needs a spec file.\n` +
+        `Create one first:  daddyapi init ${path} --out site.yaml\n` +
+        `Then run:          daddyapi ${command} site.yaml`,
+    );
+  }
+  throw new Error(`Spec file not found: ${path}`);
+}
+
+function list(value: string | boolean | undefined): string[] {
+  return typeof value === 'string'
+    ? value
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+}
+
+/** Parse "60/min", "10/s", "1000/h" or a bare number (per minute). */
+function parseRateLimit(raw: string): RateLimitOptions {
+  const match = /^(\d+)\s*(?:\/\s*(s|sec|second|m|min|minute|h|hr|hour))?$/i.exec(raw.trim());
+  if (!match || Number(match[1]) < 1) {
+    throw new Error(`Invalid --rate-limit "${raw}". Use e.g. 60/min, 10/s or 1000/h`);
+  }
+  const unit = (match[2] ?? 'min').toLowerCase();
+  const windowMs = unit.startsWith('s') ? 1_000 : unit.startsWith('h') ? 3_600_000 : 60_000;
+  return { limit: Number(match[1]), windowMs };
+}
+
+function positiveIntFlag(flags: Flags, name: string): number | undefined {
+  const raw = str(flags[name]);
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) throw new Error(`--${name} must be a whole number of at least 1`);
+  return Number(raw);
 }
 
 async function resolveHooks(spec: SiteSpec, specPath: string): Promise<Hooks | undefined> {
@@ -75,17 +151,33 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
   if (!specPath || !resourceName) {
     throw new Error('Usage: daddyapi run <spec> <resource> [--pages N] [--params k=v,k2=v2]');
   }
-  const spec = loadSiteSpec(specPath);
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'run'));
   const resource = getResource(spec, resourceName);
   const hooks = await resolveHooks(spec, specPath);
-  const pagesFlag = str(flags.pages);
+  const formatFlag = (str(flags.format) ?? 'json').toLowerCase();
+  if (!(DATA_FORMATS as readonly string[]).includes(formatFlag)) {
+    throw new Error(`--format must be one of ${DATA_FORMATS.join(', ')}`);
+  }
   const result = await runResource(spec, resource, {
     params: parseParams(str(flags.params)),
-    maxPages: pagesFlag ? Number(pagesFlag) : undefined,
+    maxPages: positiveIntFlag(flags, 'pages'),
     hooks,
     fetcher: buildFetcher(spec, flags),
   });
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  const columns = resourceInputs(resource).fieldNames;
+  const output =
+    formatFlag === 'csv'
+      ? toCsv(result.data, columns)
+      : formatFlag === 'ndjson'
+        ? toNdjson(result.data)
+        : `${JSON.stringify(result, null, 2)}\n`;
+  const out = str(flags.out);
+  if (out) {
+    writeFileSync(out, output);
+    process.stderr.write(`Wrote ${out}\n`);
+  } else {
+    process.stdout.write(output);
+  }
   if (result.warnings.length > 0) {
     process.stderr.write(`\n${result.warnings.length} warning(s):\n`);
     for (const w of result.warnings) process.stderr.write(`  - ${w.field}: ${w.message}\n`);
@@ -94,27 +186,266 @@ async function cmdRun(positionals: string[], flags: Flags): Promise<void> {
 
 async function cmdDev(positionals: string[], flags: Flags): Promise<void> {
   const [specPath] = positionals;
-  if (!specPath) throw new Error('Usage: daddyapi dev <spec> [--port N]');
-  const spec = loadSiteSpec(specPath);
+  if (!specPath) {
+    throw new Error(
+      'Usage: daddyapi dev <spec> [--port N] [--host H] [--cache [dir]] [--cors origin|off] ' +
+        '[--api-key k1,k2] [--rate-limit 60/min] [--max-pages N]',
+    );
+  }
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'dev'));
   const hooks = await resolveHooks(spec, specPath);
   const portFlag = str(flags.port);
   const port = portFlag ? Number(portFlag) : 8787;
-  const app = createServer(spec, { hooks, fetcher: buildFetcher(spec, flags) });
-  serve({ fetch: app.fetch, port });
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid --port "${portFlag}"`);
+  const hostname = str(flags.host);
+  const corsFlag = str(flags.cors);
+  const apiKeys = [...list(flags['api-key']), ...list(process.env.DADDYAPI_API_KEYS)];
+  const rateFlag = str(flags['rate-limit']);
+  const app = createServer(spec, {
+    hooks,
+    fetcher: buildFetcher(spec, flags),
+    cors: corsFlag === 'off' || corsFlag === 'false' ? false : corsFlag ? list(corsFlag) : undefined,
+    apiKeys,
+    rateLimit: rateFlag ? parseRateLimit(rateFlag) : undefined,
+    clientId: (c) => {
+      try {
+        return getConnInfo(c).remote.address;
+      } catch {
+        return undefined;
+      }
+    },
+    maxPagesLimit: positiveIntFlag(flags, 'max-pages'),
+  });
+  const server = serve({ fetch: app.fetch, port, hostname });
+  await new Promise<void>((resolveListening, reject) => {
+    server.once('listening', resolveListening);
+    server.once('error', (err: NodeJS.ErrnoException) =>
+      reject(err.code === 'EADDRINUSE' ? new Error(`Port ${port} is already in use; try --port ${port + 1}`) : err),
+    );
+  });
+  const address = server.address();
+  const actualPort = address && typeof address === 'object' ? address.port : port;
+  const shown = hostname && hostname !== '0.0.0.0' && hostname !== '::' ? hostname : 'localhost';
+  const base = `http://${shown}:${actualPort}`;
   process.stdout.write(`\n  daddyapi serving "${spec.name}"\n`);
-  process.stdout.write(`  API      http://localhost:${port}/\n`);
-  process.stdout.write(`  Docs     http://localhost:${port}/docs\n`);
-  process.stdout.write(`  OpenAPI  http://localhost:${port}/openapi.json\n\n`);
+  process.stdout.write(`  API      ${base}/\n`);
+  process.stdout.write(`  Docs     ${base}/docs\n`);
+  process.stdout.write(`  OpenAPI  ${base}/openapi.json\n`);
+  process.stdout.write(`  Health   ${base}/health\n\n`);
   for (const resource of spec.resources) {
-    process.stdout.write(`  GET http://localhost:${port}/${resource.name}\n`);
+    process.stdout.write(`  GET ${base}/${resource.name}\n`);
   }
+  if (apiKeys.length > 0) process.stdout.write(`\n  Auth: API key required (${apiKeys.length} key(s))\n`);
+  if (rateFlag) process.stdout.write(`  Rate limit: ${rateFlag} per client\n`);
   process.stdout.write('\n  Press Ctrl+C to stop.\n');
+}
+
+async function cmdMcp(positionals: string[], flags: Flags): Promise<void> {
+  const [specPath] = positionals;
+  if (!specPath) throw new Error('Usage: daddyapi mcp <spec> [--cache [dir]] [--prefix name] [--max-pages N]');
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'mcp'));
+  const hooks = await resolveHooks(spec, specPath);
+  await serveMcpStdio(spec, {
+    hooks,
+    fetcher: buildFetcher(spec, flags),
+    toolPrefix: str(flags.prefix),
+    maxPagesLimit: positiveIntFlag(flags, 'max-pages'),
+  });
+  // stdout carries the MCP protocol, so status goes to stderr.
+  process.stderr.write(`daddyapi MCP server for "${spec.name}" ready on stdio (${spec.resources.length} tool(s))\n`);
+}
+
+function defaultBaselinePath(specPath: string): string {
+  return specPath.replace(SPEC_EXT, '') + '.baseline.json';
+}
+
+async function cmdCheck(positionals: string[], flags: Flags): Promise<void> {
+  const [specPath] = positionals;
+  if (!specPath) {
+    throw new Error(
+      'Usage: daddyapi check <spec> [--baseline file] [--update-baseline] [--json] [--only a,b] [--pages N] [--cache [dir]]',
+    );
+  }
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'check'));
+  const hooks = await resolveHooks(spec, specPath);
+  const baselinePath = str(flags.baseline) ?? defaultBaselinePath(specPath);
+  const update = flags['update-baseline'] === true;
+  let baseline: Baseline | undefined;
+  if (!update && existsSync(baselinePath)) {
+    baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as Baseline;
+  } else if (!update && str(flags.baseline)) {
+    throw new Error(`Baseline file not found: ${baselinePath} (create it with --update-baseline)`);
+  }
+  const only = list(flags.only);
+  for (const name of only) getResource(spec, name);
+  const report = await checkSpec(spec, {
+    hooks,
+    fetcher: buildFetcher(spec, flags),
+    baseline,
+    only: only.length > 0 ? only : undefined,
+    pages: positiveIntFlag(flags, 'pages'),
+  });
+
+  if (flags.json === true) {
+    process.stdout.write(`${JSON.stringify({ ...report, baseline: baseline ? baselinePath : null }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`${formatReport(report)}\n`);
+    if (baseline) process.stdout.write(`  Compared with ${baselinePath}\n`);
+  }
+
+  if (update) {
+    if (!report.ok) {
+      process.stderr.write('\nNot saving a baseline from a failing check; fix the problems first.\n');
+    } else {
+      writeFileSync(baselinePath, `${JSON.stringify(baselineFromReport(report), null, 2)}\n`);
+      process.stderr.write(`\nSaved baseline to ${baselinePath}\n`);
+    }
+  }
+
+  const statuses = report.resources.map((r) => r.status);
+  if (statuses.includes('fail')) process.exitCode = 1;
+  else if (statuses.includes('error')) process.exitCode = 2;
+}
+
+const MIN_WATCH_INTERVAL_MS = 30_000;
+
+async function cmdWatch(positionals: string[], flags: Flags): Promise<void> {
+  const [specPath, resourceName] = positionals;
+  if (!specPath || !resourceName) {
+    throw new Error(
+      'Usage: daddyapi watch <spec> <resource> [--key f1,f2] [--every 10m] [--once] [--state file] ' +
+        '[--webhook url] [--webhook-secret s] [--params k=v,...] [--pages N] [--json] [--cache [dir]]',
+    );
+  }
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'watch'));
+  const resource = getResource(spec, resourceName);
+  const hooks = await resolveHooks(spec, specPath);
+  const fields = resourceInputs(resource).fieldNames;
+  const keyFields = list(flags.key);
+  const unknownKeys = keyFields.filter((k) => !fields.includes(k));
+  if (unknownKeys.length > 0) {
+    throw new Error(`--key ${unknownKeys.join(', ')} is not a field of "${resource.name}". Fields: ${fields.join(', ')}`);
+  }
+  const intervalMs = parseDuration(str(flags.every) ?? '10m');
+  if (intervalMs < MIN_WATCH_INTERVAL_MS) throw new Error('--every must be at least 30s, to stay polite to the site');
+  const statePath = str(flags.state) ?? `${specPath.replace(SPEC_EXT, '')}.${resource.name}.watch.json`;
+  const webhook = str(flags.webhook);
+  const secret = str(flags['webhook-secret']) ?? process.env.DADDYAPI_WEBHOOK_SECRET;
+  const asJson = flags.json === true;
+  const fetcher = buildFetcher(spec, flags);
+  const params = parseParams(str(flags.params));
+  const pages = positiveIntFlag(flags, 'pages');
+  const log = (line: string) => process.stderr.write(`[${new Date().toISOString()}] ${line}\n`);
+
+  const tick = async (): Promise<void> => {
+    const result = await runResource(spec, resource, { fetcher, hooks, params, maxPages: pages });
+    const previous = existsSync(statePath) ? (JSON.parse(readFileSync(statePath, 'utf8')) as WatchState) : undefined;
+    const save = () => {
+      const state: WatchState = {
+        version: 1,
+        spec: spec.name,
+        resource: resource.name,
+        key: keyFields,
+        updatedAt: result.meta.fetchedAt,
+        data: result.data,
+      };
+      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+    };
+
+    if (!previous) {
+      save();
+      const count = Array.isArray(result.data) ? `${result.data.length} rows` : 'the item';
+      log(`Baseline saved: watching ${count} of "${resource.name}" (${statePath})`);
+      return;
+    }
+    if (previous.key.join(',') !== keyFields.join(',')) {
+      throw new Error(
+        `${statePath} was saved with --key ${previous.key.join(',') || '(none)'}; ` +
+          `pass the same --key, or delete the file to start over`,
+      );
+    }
+
+    const diff = diffData(previous.data, result.data, keyFields);
+    if (!hasChanges(diff)) {
+      log(`No changes (${diff.total} ${Array.isArray(result.data) ? 'rows' : 'item'})`);
+      save();
+      return;
+    }
+
+    const event = buildWatchEvent(spec.name, resource.name, result.meta.source, diff, result.meta.fetchedAt);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify(event)}\n`);
+    } else {
+      const { added, removed, changed } = event.summary;
+      process.stdout.write(`\n${resource.name}: ${added} added, ${removed} removed, ${changed} changed\n`);
+      for (const line of formatWatchEvent(event, keyFields)) process.stdout.write(`  ${line}\n`);
+    }
+
+    if (webhook) {
+      const body = JSON.stringify(event);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'daddyapi-watch',
+        'X-Daddyapi-Event': 'change',
+      };
+      if (secret) headers['X-Daddyapi-Signature'] = signPayload(body, secret);
+      try {
+        const res = await fetch(webhook, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        log(`Webhook delivered (${res.status})`);
+      } catch (err) {
+        // Keep the old state so the same changes are sent again next time.
+        log(`Webhook failed (${err instanceof Error ? err.message : String(err)}); will retry these changes next run`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    save();
+  };
+
+  if (flags.once === true) {
+    await tick();
+    return;
+  }
+
+  log(`Watching "${resource.name}" every ${str(flags.every) ?? '10m'}${webhook ? ` → ${webhook}` : ''}. Ctrl+C to stop.`);
+  let stopping = false;
+  process.on('SIGINT', () => {
+    stopping = true;
+    log('Stopping.');
+    process.exit(0);
+  });
+  while (!stopping) {
+    try {
+      await tick();
+    } catch (err) {
+      log(`Run failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalMs));
+  }
+}
+
+function cmdTypes(positionals: string[], flags: Flags): void {
+  const [specPath] = positionals;
+  if (!specPath) throw new Error('Usage: daddyapi types <spec> [--out client.ts] [--json-schema]');
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'types'));
+  const output =
+    flags['json-schema'] === true
+      ? `${JSON.stringify(generateJsonSchema(spec), null, 2)}\n`
+      : generateTypeScript(spec);
+  const out = str(flags.out);
+  if (out) {
+    writeFileSync(out, output);
+    process.stderr.write(`Wrote ${out}\n`);
+  } else {
+    process.stdout.write(output);
+  }
 }
 
 function cmdValidate(positionals: string[]): void {
   const [specPath] = positionals;
   if (!specPath) throw new Error('Usage: daddyapi validate <spec>');
-  const result = safeParseSiteSpec(readFileSync(specPath, 'utf8'));
+  const result = safeParseSiteSpec(readFileSync(requireSpecFile(specPath, 'validate'), 'utf8'));
   if (result.success) {
     const count = result.data.resources.length;
     process.stdout.write(`OK  ${specPath} is valid (${count} resource(s))\n`);
@@ -135,11 +466,12 @@ function cmdValidate(positionals: string[]): void {
 async function cmdInit(positionals: string[], flags: Flags): Promise<void> {
   const [url] = positionals;
   if (!url) throw new Error('Usage: daddyapi init <url> [--out spec.yaml]');
-  process.stderr.write(`Crawling ${url} ...\n`);
-  const spec = await inferSpec(url);
+  const target = normalizeUrl(url);
+  process.stderr.write(`Crawling ${target} ...\n`);
+  const spec = await inferSpec(target);
   const header =
     '# Auto-generated DRAFT spec — review the selectors before relying on it.\n' +
-    `# Generated by: daddyapi init ${url}\n\n`;
+    `# Generated by: daddyapi init ${target}\n\n`;
   const yaml = header + toYaml(spec);
   const out = str(flags.out);
   if (out) {
@@ -153,7 +485,7 @@ async function cmdInit(positionals: string[], flags: Flags): Promise<void> {
 function cmdBuild(positionals: string[], flags: Flags): void {
   const [specPath] = positionals;
   if (!specPath) throw new Error('Usage: daddyapi build <spec> [--out openapi.json]');
-  const spec = loadSiteSpec(specPath);
+  const spec = loadSiteSpec(requireSpecFile(specPath, 'build'));
   const doc = `${JSON.stringify(buildOpenApi(spec), null, 2)}\n`;
   const out = str(flags.out);
   if (out) {
@@ -171,14 +503,28 @@ Usage:
   daddyapi init <url> [--out spec.yaml]      Crawl a site and write a draft SiteSpec
   daddyapi dev <spec> [--port 8787] [--cache [dir]]
                                              Serve the spec as a live API with Swagger docs
+                 dev also takes --host H, --cors origin|off, --api-key k1,k2
+                 (or DADDYAPI_API_KEYS), --rate-limit 60/min, --max-pages N
+  daddyapi mcp <spec> [--cache [dir]] [--prefix name]
+                                             Serve the spec as an MCP server (stdio) for AI agents
   daddyapi run <spec> <resource> [--pages N] [--params k=v,...] [--cache [dir]]
                                              Fetch one resource and print JSON
+                 run also takes --format json|csv|ndjson and --out file
+  daddyapi check <spec> [--update-baseline] [--json]
+                                             Check every resource against its data contract
+                                             and baseline; exit 1 if the site changed
+  daddyapi types <spec> [--out client.ts] [--json-schema]
+                                             Generate TypeScript types and a typed API client
+  daddyapi watch <spec> <resource> [--key field] [--every 10m] [--webhook url] [--once]
+                                             Report rows added, removed or changed on the site,
+                                             optionally to a signed webhook
 
   --cache [dir]  Persist fetched pages to disk (default dir: .daddyapi-cache),
                  so repeated runs don't re-hit the site.
   daddyapi validate <spec>                   Check a spec against the schema
   daddyapi build <spec> [--out openapi.json] Emit the OpenAPI document
   daddyapi help                              Show this help
+  daddyapi --version, -v                     Print the version
 
 Docs & examples: https://github.com/abduladnan-mt7/daddyapi
 `);
@@ -193,6 +539,14 @@ export async function main(): Promise<void> {
       return cmdRun(positionals, flags);
     case 'dev':
       return cmdDev(positionals, flags);
+    case 'mcp':
+      return cmdMcp(positionals, flags);
+    case 'check':
+      return cmdCheck(positionals, flags);
+    case 'types':
+      return cmdTypes(positionals, flags);
+    case 'watch':
+      return cmdWatch(positionals, flags);
     case 'validate':
       return cmdValidate(positionals);
     case 'init':
@@ -204,6 +558,10 @@ export async function main(): Promise<void> {
     case '--help':
     case '-h':
       return printHelp();
+    case '--version':
+    case '-v':
+      process.stdout.write(`${version}\n`);
+      return;
     default:
       process.stderr.write(`Unknown command: ${command}\n\n`);
       printHelp();

@@ -9,8 +9,32 @@ export interface InferOptions {
 
 const DEFAULT_UA = 'daddyapi-bot (+https://github.com/abduladnan-mt7/daddyapi)';
 
+/**
+ * Turn what a person types into an absolute http(s) URL: a bare host such as
+ * `quotes.toscrape.com` gets `https://`. Throws a readable error for anything
+ * that still isn't a web address.
+ */
+export function normalizeUrl(input: string): string {
+  const trimmed = input.trim();
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    throw new Error(`"${input}" isn't a valid web address. Try something like https://quotes.toscrape.com`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`"${input}" must be an http:// or https:// address`);
+  }
+  if (!url.hostname.includes('.') && url.hostname !== 'localhost') {
+    throw new Error(`"${input}" isn't a valid web address. Try something like https://quotes.toscrape.com`);
+  }
+  return url.href;
+}
+
 /** Crawl a single page and produce a draft SiteSpec for review. */
-export async function inferSpec(startUrl: string, options: InferOptions = {}): Promise<SiteSpec> {
+export async function inferSpec(rawUrl: string, options: InferOptions = {}): Promise<SiteSpec> {
+  const startUrl = normalizeUrl(rawUrl);
   const fetcherOptions: PoliteFetcherOptions = {
     userAgent: options.userAgent ?? DEFAULT_UA,
     requestsPerSecond: 1,

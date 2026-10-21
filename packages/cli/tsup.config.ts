@@ -7,5 +7,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   banner: { js: '#!/usr/bin/env node' },
-  external: ['@daddyapi/spec', '@daddyapi/core'],
+  external: ['@daddyapi/spec', '@daddyapi/core', '@daddyapi/mcp'],
 });
