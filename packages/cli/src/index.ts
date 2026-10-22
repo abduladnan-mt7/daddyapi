@@ -518,12 +518,14 @@ Usage:
                                              Report rows added, removed or changed on the site,
                                              optionally to a signed webhook
 
-  --cache [dir]  Persist fetched pages to disk (default dir: .daddyapi-cache),
-                 so repeated runs don't re-hit the site.
   daddyapi validate <spec>                   Check a spec against the schema
   daddyapi build <spec> [--out openapi.json] Emit the OpenAPI document
   daddyapi help                              Show this help
   daddyapi --version, -v                     Print the version
+
+Options:
+  --cache [dir]   Persist fetched pages to disk (default dir: .daddyapi-cache),
+                  so repeated runs don't re-hit the site.
 
 Docs & examples: https://github.com/abduladnan-mt7/daddyapi
 `);
