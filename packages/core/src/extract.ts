@@ -131,6 +131,24 @@ function applyTransform(
       } catch {
         return str;
       }
+    case 'date': {
+      const ms = Date.parse(str);
+      if (Number.isNaN(ms)) return null;
+      const d = new Date(ms);
+      // Text without a time ("14 June 2026", "2026-06-14") is a calendar date.
+      if (!/\d{1,2}:\d{2}/.test(str)) {
+        // ES parses ISO date-only strings ("2026-06-14") as UTC midnight, other
+        // formats as local time: read the UTC day for the former so it can't
+        // land a day early west of UTC, and the local day for the rest.
+        const utc = /^\s*\d{4}-\d{2}-\d{2}\s*$/.test(str);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const y = utc ? d.getUTCFullYear() : d.getFullYear();
+        const m = (utc ? d.getUTCMonth() : d.getMonth()) + 1;
+        const day = utc ? d.getUTCDate() : d.getDate();
+        return `${y}-${pad(m)}-${pad(day)}`;
+      }
+      return d.toISOString();
+    }
     default: {
       // Not a built-in — try the spec's code escape-hatch.
       const custom = context.hooks?.transforms?.[name];

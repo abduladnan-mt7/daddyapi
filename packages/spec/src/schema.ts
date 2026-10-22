@@ -16,6 +16,7 @@ export const transformSchema = z.enum([
   'number',
   'boolean',
   'url',
+  'date',
   'lower',
   'upper',
 ]);

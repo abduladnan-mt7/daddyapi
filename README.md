@@ -291,7 +291,10 @@ politeness:
 
 **Fields** support: `selector`, `attr` (pull an attribute), `html`, `many`
 (array), `transform` (`trim`, `int`, `float`, `number`, `boolean`, `url`,
-`lower`, `upper`), `default`, and `optional`.
+`lower`, `upper`, `date`), `default`, and `optional`.
+
+`date` parses a free-text or ISO date into an ISO 8601 value (`2026-06-14`,
+or a full timestamp for a date-time) and yields `null` when it can't parse.
 
 A resource defines either a **`list`** (a repeating-row selector + per-row
 fields) or an **`item`** (page-level fields). Missing required fields don't fail

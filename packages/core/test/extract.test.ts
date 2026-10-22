@@ -42,3 +42,47 @@ describe('extractFields', () => {
     expect(warnings[0]!.field).toBe('missing');
   });
 });
+
+describe('extractFields with the date transform', () => {
+  const parseDate = (text: string) => {
+    const $ = load(`<div class="row"><time class="when">${text}</time></div>`);
+    const warnings: ExtractWarning[] = [];
+    const fields: Fields = { when: { selector: 'time.when', transform: 'date' } };
+    const data = extractFields($, $('.row').first(), fields, {
+      baseUrl: 'https://e.com',
+      warnings,
+    });
+    expect(warnings).toHaveLength(0);
+    return data.when;
+  };
+
+  it('keeps a date-only value as an ISO date', () => {
+    expect(parseDate('2026-06-14')).toBe('2026-06-14');
+  });
+
+  it('turns a free-text date into an ISO date', () => {
+    expect(parseDate('14 June 2026')).toBe('2026-06-14');
+  });
+
+  it('turns a date-time into a full ISO timestamp', () => {
+    expect(parseDate('2026-06-14T10:00Z')).toBe('2026-06-14T10:00:00.000Z');
+  });
+
+  it('returns null for an unparseable value', () => {
+    expect(parseDate('sometime last week')).toBeNull();
+  });
+
+  it('keeps an ISO date-only value the same day west of UTC', () => {
+    const prior = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      // Date.parse reads date-only ISO strings as UTC midnight; without the
+      // UTC-day branch this lands on 2026-06-13 in a negative offset.
+      expect(parseDate('2026-06-14')).toBe('2026-06-14');
+      expect(parseDate('14 June 2026')).toBe('2026-06-14');
+    } finally {
+      if (prior === undefined) delete process.env.TZ;
+      else process.env.TZ = prior;
+    }
+  });
+});
