@@ -9,6 +9,7 @@ export const BUILTIN_TRANSFORMS = new Set([
   'number',
   'boolean',
   'url',
+  'date',
   'lower',
   'upper',
 ]);
