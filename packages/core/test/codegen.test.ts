@@ -88,7 +88,7 @@ describe('generateTypeScript', () => {
     }).outputText;
     const file = join(dir, 'client.mjs');
     writeFileSync(file, js);
-    const mod = (await import(pathToFileURL(file).href)) as Record<string, any>;
+    const mod = (await import(/* @vite-ignore */ decodeURI(pathToFileURL(file).href))) as Record<string, any>;
 
     const viaApp = ((url: string, init?: RequestInit) => app.request(url, init)) as typeof fetch;
     const client = new mod.QuotesSiteClient('http://api.local/', { apiKey: 'k', fetch: viaApp });
